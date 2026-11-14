@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "questions": [
+    {"id": "py-purpose", "repo": "python_service", "question": "What problem does Stockroom help warehouse staff solve?", "category": "purpose_docs", "expected_files": ["README.md"], "unsupported": false},
+    {"id": "py-create", "repo": "python_service", "question": "Where does the service validate a new SKU and its starting quantity?", "category": "implementation", "expected_files": ["app/routes.py"], "unsupported": false},
+    {"id": "py-client", "repo": "python_service", "question": "How does the rate limiter choose the client key for a request?", "category": "implementation", "expected_files": ["app/limits.py"], "unsupported": false},
+    {"id": "py-negative", "repo": "python_service", "question": "Which hardware security module encrypts Stockroom backup archives?", "category": "unsupported", "expected_files": [], "unsupported": true},
+
+    {"id": "ts-purpose", "repo": "typescript_events", "question": "What does Hookbox provide for developers connecting event services?", "category": "purpose_docs", "expected_files": ["README.md"], "unsupported": false},
+    {"id": "ts-validate", "repo": "typescript_events", "question": "Which code validates the event envelope identifier and topic?", "category": "implementation", "expected_files": ["src/middleware/validateEvent.ts"], "unsupported": false},
+    {"id": "ts-replay", "repo": "typescript_events", "question": "How are duplicate webhook delivery identifiers prevented from running twice?", "category": "implementation", "expected_files": ["src/services/webhookGuard.ts"], "unsupported": false},
+    {"id": "ts-negative", "repo": "typescript_events", "question": "Which SQL migration configures a Redis cluster for event ordering?", "category": "unsupported", "expected_files": [], "unsupported": true},
+
+    {"id": "mixed-purpose", "repo": "mixed_worker_ui", "question": "How do the browser console and Python worker coordinate repository jobs?", "category": "purpose_docs", "expected_files": ["docs/architecture.md"], "unsupported": false},
+    {"id": "mixed-claim", "repo": "mixed_worker_ui", "question": "Where does the Python worker claim a queued job and increment its attempt?", "category": "implementation", "expected_files": ["worker/jobs.py"], "unsupported": false},
+    {"id": "mixed-client", "repo": "mixed_worker_ui", "question": "Which TypeScript function extracts an API error message from a response?", "category": "implementation", "expected_files": ["web/apiClient.ts"], "unsupported": false},
+    {"id": "mixed-negative", "repo": "mixed_worker_ui", "question": "What Redis shard key is used to select a production cache cluster?", "category": "unsupported", "expected_files": [], "unsupported": true}
+  ]
+}

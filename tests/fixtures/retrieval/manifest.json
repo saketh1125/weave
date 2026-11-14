@@ -1,0 +1,42 @@
+{
+  "file_sha256": {
+    "mixed_worker_ui/README.md": "edff107efd71d1690b4795f808bf36cd864e10f9fc935de6f4a727c28be28a99",
+    "mixed_worker_ui/docs/architecture.md": "766d5583d23be7ff5a64741b22e6d6011a9d5fb070dfb4627e309ff943db76de",
+    "mixed_worker_ui/web/apiClient.ts": "224ba71bb90e2d2315a07dbdeeeb67775e41d2ff1c8788f710c7c5038bc20a58",
+    "mixed_worker_ui/worker/jobs.py": "8a6c52021038a5e79d9fe4a433b5c0d8c05f8ec8f27db72c39ef4030e41cdb3b",
+    "python_service/README.md": "f283fa16b1f101a6b7cf8c61c246e7991d46151bff05d336c54eeec605aabffa",
+    "python_service/app/limits.py": "5c076a8d99d5206b5ef78ba3881ee7f41d1fc8b901651eed4cf3734b5aca8489",
+    "python_service/app/routes.py": "dd766520c203c691c677fd179ed92445e9b5b380350566a4fdd34eb77236741a",
+    "questions.json": "0aa3a34f16e10ac3f3aa768444e22a302f7cba961c80e0272ac1f69988d1f10f",
+    "typescript_events/README.md": "b9ad86f960dfdab46214790a549f85539fa4762d3f13f9b8f9ec7fa18687a18f",
+    "typescript_events/src/middleware/validateEvent.ts": "1bcb3921969acdbd29e4a7ccc1d731ce324b83016687deeb44a40e4bb3a214c6",
+    "typescript_events/src/services/webhookGuard.ts": "f538be3fdb8cd97a9b0c97dd3f31de4caf4dec8c4776c5bf37227d32604f2b79"
+  },
+  "provenance": "Pinned synthetic retrieval fixtures; not representative repositories.",
+  "questions": "questions.json",
+  "repositories": [
+    {
+      "id": "python_service",
+      "languages": [
+        "python",
+        "markdown"
+      ]
+    },
+    {
+      "id": "typescript_events",
+      "languages": [
+        "typescript",
+        "markdown"
+      ]
+    },
+    {
+      "id": "mixed_worker_ui",
+      "languages": [
+        "python",
+        "typescript",
+        "markdown"
+      ]
+    }
+  ],
+  "version": 1
+}

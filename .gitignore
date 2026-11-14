@@ -1,0 +1,46 @@
+# Weave: credentials and local-only state
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+/.migration/
+/.agents/
+/.codex/
+/.aws/
+/work/
+/data/
+/logs/
+/docs/evidence/raw/
+# Python
+.deps/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+*.tsbuildinfo
+# Local artifacts
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.local
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

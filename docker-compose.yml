@@ -1,0 +1,96 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: sentra
+      POSTGRES_USER: sentra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to match the existing data volume or a new random value}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentra -d sentra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build: .
+    image: ${SENTRA_IMAGE:-sentra-api}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sentra:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/sentra
+      HOME: /tmp
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_API_KEY2: ${MISTRAL_API_KEY2:-}
+      SENTRA_LLM_MODEL: mistral-large-4
+      SENTRA_DOCUMENTATION_MODEL: ${SENTRA_DOCUMENTATION_MODEL:-mistral-large-4}
+      SENTRA_MODEL_CONNECTIONS: ${SENTRA_MODEL_CONNECTIONS:-}
+      SENTRA_MODEL_WORKFLOWS: ${SENTRA_MODEL_WORKFLOWS:-}
+      SENTRA_CUSTOM_MODEL_API_KEY: ${SENTRA_CUSTOM_MODEL_API_KEY:-}
+      SENTRA_ANTIGRAVITY_ENABLED: ${SENTRA_ANTIGRAVITY_ENABLED:-false}
+      SENTRA_AGENT_BRIDGE_URL: ${SENTRA_AGENT_BRIDGE_URL:-http://host.docker.internal:9217}
+      SENTRA_AGENT_BRIDGE_TOKEN: ${SENTRA_AGENT_BRIDGE_TOKEN:-}
+      SENTRA_GH_TOKEN: ${SENTRA_GH_TOKEN:-}
+      SENTRA_ACCESS_TOKEN: ${SENTRA_ACCESS_TOKEN:?Set a random single-user access token in .env}
+      SENTRA_CORS_ORIGINS: ${SENTRA_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      SENTRA_SESSION_TTL_SECONDS: ${SENTRA_SESSION_TTL_SECONDS:-3600}
+      SENTRA_GIT_ALLOWED_HOSTS: ${SENTRA_GIT_ALLOWED_HOSTS:-github.com}
+      SENTRA_REPO_MAX_FILE_BYTES: ${SENTRA_REPO_MAX_FILE_BYTES:-1000000}
+      SENTRA_REPO_MAX_TOTAL_BYTES: ${SENTRA_REPO_MAX_TOTAL_BYTES:-50000000}
+      SENTRA_REPO_MAX_FILES: ${SENTRA_REPO_MAX_FILES:-10000}
+      SENTRA_REPO_MAX_CHUNKS: ${SENTRA_REPO_MAX_CHUNKS:-20000}
+      SENTRA_EMBED_BATCH_SIZE: ${SENTRA_EMBED_BATCH_SIZE:-8}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - reposdata:/app/data/repos
+      - modelcache:/app/data/cache
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    image: ${SENTRA_IMAGE:-sentra-api}
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sentra:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/sentra
+      HOME: /tmp
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_API_KEY2: ${MISTRAL_API_KEY2:-}
+      SENTRA_LLM_MODEL: mistral-large-4
+      SENTRA_DOCUMENTATION_MODEL: ${SENTRA_DOCUMENTATION_MODEL:-mistral-large-4}
+      SENTRA_MODEL_CONNECTIONS: ${SENTRA_MODEL_CONNECTIONS:-}
+      SENTRA_MODEL_WORKFLOWS: ${SENTRA_MODEL_WORKFLOWS:-}
+      SENTRA_CUSTOM_MODEL_API_KEY: ${SENTRA_CUSTOM_MODEL_API_KEY:-}
+      SENTRA_ANTIGRAVITY_ENABLED: ${SENTRA_ANTIGRAVITY_ENABLED:-false}
+      SENTRA_AGENT_BRIDGE_URL: ${SENTRA_AGENT_BRIDGE_URL:-http://host.docker.internal:9217}
+      SENTRA_AGENT_BRIDGE_TOKEN: ${SENTRA_AGENT_BRIDGE_TOKEN:-}
+      SENTRA_GH_TOKEN: ${SENTRA_GH_TOKEN:-}
+      SENTRA_SCAN_JOBS: ${SENTRA_SCAN_JOBS:-2}
+      GOMAXPROCS: "2"
+      SENTRA_GIT_ALLOWED_HOSTS: ${SENTRA_GIT_ALLOWED_HOSTS:-github.com}
+      SENTRA_REPO_MAX_FILE_BYTES: ${SENTRA_REPO_MAX_FILE_BYTES:-1000000}
+      SENTRA_REPO_MAX_TOTAL_BYTES: ${SENTRA_REPO_MAX_TOTAL_BYTES:-50000000}
+      SENTRA_REPO_MAX_FILES: ${SENTRA_REPO_MAX_FILES:-10000}
+      SENTRA_REPO_MAX_CHUNKS: ${SENTRA_REPO_MAX_CHUNKS:-20000}
+      SENTRA_EMBED_BATCH_SIZE: ${SENTRA_EMBED_BATCH_SIZE:-8}
+    volumes:
+      - reposdata:/app/data/repos
+      - modelcache:/app/data/cache
+
+volumes:
+  pgdata:
+  reposdata:
+  modelcache:

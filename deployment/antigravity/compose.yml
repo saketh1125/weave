@@ -1,0 +1,131 @@
+services:
+  runner:
+    profiles: [antigravity-review]
+    build:
+      context: ../..
+      dockerfile: deployment/antigravity/Dockerfile
+      platforms: [linux/amd64]
+      additional_contexts:
+        acp-runtime: ../../work/acp-runtime-cache
+    image: sentra-antigravity-acp:1.5.8
+    init: true
+    stdin_open: true
+    tty: false
+    working_dir: /workspace
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m
+      - /runtime-tmp:rw,nosuid,nodev,size=1536m,uid=10001,gid=10001,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 3g
+    cpus: 1.0
+    environment:
+      HOME: /home/agy
+      XDG_CONFIG_HOME: /home/agy/.config
+      XDG_CACHE_HOME: /home/agy/.cache
+      TMPDIR: /runtime-tmp
+      TMP: /runtime-tmp
+      TEMP: /runtime-tmp
+      HTTPS_PROXY: http://proxy:3128
+      HTTP_PROXY: http://proxy:3128
+      https_proxy: http://proxy:3128
+      http_proxy: http://proxy:3128
+      NO_PROXY: localhost,127.0.0.1,::1,proxy,source-tools
+      no_proxy: localhost,127.0.0.1,::1,proxy,source-tools
+    volumes:
+      - type: volume
+        source: acp_profile
+        target: /home/agy
+      - type: bind
+        source: ./settings.json
+        target: /home/agy/.gemini/antigravity-cli/settings.json
+        read_only: true
+      - type: bind
+        source: ${ACP_FIXTURE_DIR:?Set ACP_FIXTURE_DIR to a disposable synthetic fixture directory}
+        target: /workspace
+        read_only: true
+    depends_on:
+      proxy:
+        condition: service_healthy
+    networks: [acp_internal]
+    restart: "no"
+
+  source-tools:
+    profiles: [antigravity-review]
+    image: python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+    command: [python, -u, /opt/source_tools.py]
+    user: "65532:65532"
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    volumes:
+      - type: bind
+        source: ./source_tools.py
+        target: /opt/source_tools.py
+        read_only: true
+      - type: bind
+        source: ../../app/documentation/assessment.py
+        target: /opt/assessment.py
+        read_only: true
+      - type: bind
+        source: ${ACP_JOB_FILE:-../../work/acp-source-job.json}
+        target: /input/job.json
+        read_only: true
+    healthcheck:
+      test: [CMD, python, -c, "import socket; s=socket.create_connection(('127.0.0.1', 8080), timeout=2); s.close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    networks: [acp_internal]
+    restart: "no"
+
+  proxy:
+    profiles: [antigravity-review]
+    image: python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+    command: [python, -u, /opt/egress_proxy.py]
+    user: "65532:65532"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    volumes:
+      - type: bind
+        source: ./egress_proxy.py
+        target: /opt/egress_proxy.py
+        read_only: true
+      - type: bind
+        source: ./egress-hosts.txt
+        target: /etc/agy-egress/hosts.txt
+        read_only: true
+    networks: [acp_internal, acp_egress]
+    restart: "no"
+    healthcheck:
+      test: [CMD, python, -c, "import socket; s=socket.create_connection(('127.0.0.1', 3128), timeout=2); s.close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  acp_profile:
+    name: sentra-antigravity-local-profile
+    external: true
+
+networks:
+  acp_internal:
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  acp_egress: {}

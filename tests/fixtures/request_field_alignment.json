@@ -1,0 +1,788 @@
+{
+  "description": "Synthetic regression corpus for top-level FastAPI/Pydantic request-body field claims. Cases are deliberately constructed and are not a representative quality sample.",
+  "claim_grammar": [
+    "POST /items request body field `name` is required",
+    "POST /items request body field `name` is optional",
+    "POST /items request body field `name` defaults to `10`",
+    "POST /items includes request body field `name`",
+    "A table below heading `## POST /items` with Field / Required / Default columns; required accepts true/false/yes/no and defaults are JSON scalars."
+  ],
+  "cases": [
+    {
+      "id": "aligned_required",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `name` is required",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "outdated_required_vs_optional_default",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `name` is required",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str = 'guest'\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "outdated",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "aligned_literal_default",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `count` defaults to `10`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    count: int = 10\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "default",
+        "route": "POST /items",
+        "field": "count",
+        "value": 10,
+        "attribute": "default"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_default"
+      }
+    },
+    {
+      "id": "outdated_literal_default",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `count` defaults to `8`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    count: int = 10\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "default",
+        "route": "POST /items",
+        "field": "count",
+        "value": 8,
+        "attribute": "default"
+      },
+      "expected": {
+        "status": "outdated",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_default"
+      }
+    },
+    {
+      "id": "field_presence_aligned",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items includes request body field `name`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "presence",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "presence"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_presence"
+      }
+    },
+    {
+      "id": "missing_field_outdated",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items includes request body field `absent`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "presence",
+        "route": "POST /items",
+        "field": "absent",
+        "value": true,
+        "attribute": "presence"
+      },
+      "expected": {
+        "status": "outdated",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "end_line": 5,
+          "start_line": 4,
+          "file": "app/main.py"
+        },
+        "reason_category": null,
+        "claim_type": "request_body_presence"
+      }
+    },
+    {
+      "id": "explicit_alias_unverified",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items includes request body field `displayName`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel, Field\napp = FastAPI()\nclass Item(BaseModel):\n    display_name: str = Field(alias='displayName')\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "presence",
+        "route": "POST /items",
+        "field": "displayName",
+        "value": true,
+        "attribute": "presence"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "end_line": 5,
+          "start_line": 5,
+          "file": "app/main.py"
+        },
+        "reason_category": "alias_unsupported",
+        "claim_type": "request_body_presence"
+      }
+    },
+    {
+      "id": "imported_model",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `name` is required",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom app.models import Item\napp = FastAPI()\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        },
+        {
+          "content": "from pydantic import BaseModel\nclass Item(BaseModel):\n    name: str\n",
+          "path": "app/models.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/models.py",
+          "start_line": 3,
+          "end_line": 3
+        },
+        "reason_category": null,
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "mounted_router",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /api/items includes request body field `name`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom app.routes import router\napp = FastAPI()\napp.include_router(router, prefix='/api')\n",
+          "path": "app/main.py"
+        },
+        {
+          "content": "from fastapi import APIRouter\nfrom app.models import Item\nrouter = APIRouter(prefix='/items')\n@router.post('')\ndef create(item: Item): pass\n",
+          "path": "app/routes.py"
+        },
+        {
+          "content": "from pydantic import BaseModel\nclass Item(BaseModel):\n    name: str\n",
+          "path": "app/models.py"
+        }
+      ],
+      "claim": {
+        "kind": "presence",
+        "route": "POST /api/items",
+        "field": "name",
+        "value": true,
+        "attribute": "presence"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/models.py",
+          "start_line": 3,
+          "end_line": 3
+        },
+        "reason_category": null,
+        "claim_type": "request_body_presence"
+      }
+    },
+    {
+      "id": "duplicate_routes_ambiguous",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `name` is required",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass A(BaseModel):\n    name: str\nclass B(BaseModel):\n    name: str = 'x'\n@app.post('/items')\ndef first(item: A): pass\n@app.post('/items')\ndef second(item: B): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": null,
+        "reason_category": "duplicate_routes",
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "dynamic_default_unverified",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `token` defaults to `\"abc\"`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel, Field\napp = FastAPI()\nclass Item(BaseModel):\n    token: str = Field(default=make_token())\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "default",
+        "route": "POST /items",
+        "field": "token",
+        "value": "abc",
+        "attribute": "default"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "end_line": 5,
+          "start_line": 5
+        },
+        "reason_category": "dynamic_default",
+        "claim_type": "request_body_default"
+      }
+    },
+    {
+      "id": "default_factory_unverified",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `token` defaults to `null`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel, Field\napp = FastAPI()\nclass Item(BaseModel):\n    token: str = Field(default_factory=str)\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "default",
+        "route": "POST /items",
+        "field": "token",
+        "value": null,
+        "attribute": "default"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "end_line": 5,
+          "start_line": 5
+        },
+        "reason_category": "unsupported_field_declaration",
+        "claim_type": "request_body_default"
+      }
+    },
+    {
+      "id": "inherited_model",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items includes request body field `id`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Base(BaseModel):\n    id: int\nclass Item(Base):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "presence",
+        "route": "POST /items",
+        "field": "id",
+        "value": true,
+        "attribute": "presence"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "end_line": 7,
+          "start_line": 6,
+          "file": "app/main.py"
+        },
+        "reason_category": "inheritance_unsupported",
+        "claim_type": "request_body_presence"
+      }
+    },
+    {
+      "id": "example_context_unverified",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "## Examples\nPOST /items request body field `name` is optional",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": false,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 2,
+          "end_line": 2
+        },
+        "code": null,
+        "reason_category": "example_context",
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "historical_context_unverified",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "## Historical contract\nPOST /items includes request body field `name`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "presence",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "presence"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 2,
+          "end_line": 2
+        },
+        "code": null,
+        "reason_category": "historical_context",
+        "claim_type": "request_body_presence"
+      }
+    },
+    {
+      "id": "conditional_context_unverified",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "POST /items request body field `name` is required when enabled",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "unverified",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": null,
+        "reason_category": "conditional_context",
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "table_aligned",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "## POST /items\n### Request body\n\n| Field | Required | Default |\n| --- | --- | --- |\n| name | yes |  |",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    name: str\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "name",
+        "value": true,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 6,
+          "end_line": 6
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "table_outdated",
+      "split": "development",
+      "markdown": [
+        {
+          "content": "## POST /items\n### Request body\n\n| Field | Required | Default |\n| --- | --- | --- |\n| count | no | `8` |",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    count: int = 10\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "default",
+        "route": "POST /items",
+        "field": "count",
+        "value": 8,
+        "attribute": "default"
+      },
+      "expected": [
+        {
+          "claim_type": "request_body_required",
+          "status": "aligned",
+          "doc": {
+            "end_line": 6,
+            "start_line": 6,
+            "file": "docs/api.md"
+          },
+          "reason_category": null,
+          "code": {
+            "end_line": 5,
+            "start_line": 5,
+            "file": "app/main.py"
+          }
+        },
+        {
+          "claim_type": "request_body_default",
+          "status": "outdated",
+          "doc": {
+            "end_line": 6,
+            "start_line": 6,
+            "file": "docs/api.md"
+          },
+          "reason_category": null,
+          "code": {
+            "end_line": 5,
+            "start_line": 5,
+            "file": "app/main.py"
+          }
+        }
+      ]
+    },
+    {
+      "id": "evaluation_optional_field",
+      "split": "evaluation",
+      "markdown": [
+        {
+          "content": "POST /items request body field `note` is optional",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    note: str | None = None\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "required",
+        "route": "POST /items",
+        "field": "note",
+        "value": false,
+        "attribute": "required"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_required"
+      }
+    },
+    {
+      "id": "evaluation_json_string_default",
+      "split": "evaluation",
+      "markdown": [
+        {
+          "content": "POST /items request body field `label` defaults to `\"guest\"`",
+          "path": "docs/api.md"
+        }
+      ],
+      "code": [
+        {
+          "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\napp = FastAPI()\nclass Item(BaseModel):\n    label: str = 'guest'\n@app.post('/items')\ndef create(item: Item): pass\n",
+          "path": "app/main.py"
+        }
+      ],
+      "claim": {
+        "kind": "default",
+        "route": "POST /items",
+        "field": "label",
+        "value": "guest",
+        "attribute": "default"
+      },
+      "expected": {
+        "status": "aligned",
+        "doc": {
+          "file": "docs/api.md",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "code": {
+          "file": "app/main.py",
+          "start_line": 5,
+          "end_line": 5
+        },
+        "reason_category": null,
+        "claim_type": "request_body_default"
+      }
+    }
+  ],
+  "corpus_version": 2,
+  "changelog": "v2: corrected JSON-string scalar quoting, explicit Request body table heading and JSON table scalars; missing declared fields contradict presence claims; factory case uses a primitive-typed field and isolates unsupported default_factory declaration. Evaluation split remains two synthetic cases only.",
+  "previous_frozen_sha256": "0B03EF5C48337B0BCD288EC95647393FF6DA45BCC167D0AC422499A306880B71"
+}

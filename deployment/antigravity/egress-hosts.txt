@@ -1,0 +1,6 @@
+# Initial exact CONNECT destinations only. Review the denied-hostname logs from
+# local runs and add entries only after confirming they are Google-owned hosts.
+accounts.google.com
+oauth2.googleapis.com
+cloudcode-pa.googleapis.com
+daily-cloudcode-pa.googleapis.com

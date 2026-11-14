@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "split": "development",
+  "questions": [
+    {
+      "id": "sentra-purpose",
+      "category": "purpose_docs",
+      "question": "What engineering work does Sentra help a developer understand before changing or releasing a repository?",
+      "expected_files": ["README.md", "docs/README.md"],
+      "unsupported": false
+    },
+    {
+      "id": "repository-ingestion-safety",
+      "category": "implementation",
+      "question": "How does repository ingestion validate a remote and keep cloned checkout paths isolated by repository identity?",
+      "expected_files": ["app/repo_security.py", "app/repo_storage.py", "app/ingest.py"],
+      "unsupported": false
+    },
+    {
+      "id": "persistent-job-leases",
+      "category": "implementation",
+      "question": "How are queued jobs claimed with a repository lock, lease expiry, and bounded retry recovery?",
+      "expected_files": ["app/jobs.py", "app/worker.py"],
+      "unsupported": false
+    },
+    {
+      "id": "single-user-auth",
+      "category": "implementation",
+      "question": "How does Sentra exchange its single-user access key for a signed session and rate-limit login attempts?",
+      "expected_files": ["app/auth.py", "app/login_limits.py", "app/main.py"],
+      "unsupported": false
+    },
+    {
+      "id": "docs-cache-versioning",
+      "category": "implementation",
+      "question": "What source hash, model, prompt, and schema metadata determine whether a generated documentation result can be reused?",
+      "expected_files": ["app/routers/docs.py"],
+      "unsupported": false
+    },
+    {
+      "id": "readiness-score-status",
+      "category": "implementation",
+      "question": "Which finding statuses contribute to the readiness score, and how does the score expose stale snapshots?",
+      "expected_files": ["app/score.py", "app/routers/scan.py", "docs/SCORING.md"],
+      "unsupported": false
+    },
+    {
+      "id": "pr-file-pagination",
+      "category": "implementation",
+      "question": "How does pull request review paginate changed files and report incomplete file lists or missing patches?",
+      "expected_files": ["app/routers/pr.py", "frontend/src/pages/PrRisk.tsx"],
+      "unsupported": false
+    },
+    {
+      "id": "broader-alignment",
+      "category": "implementation",
+      "question": "How does documentation alignment check both FastAPI and Express routes while keeping unsupported claims unverified?",
+      "expected_files": ["app/express_alignment.py", "app/behavioral_alignment.py", "app/routers/drift.py"],
+      "unsupported": false
+    },
+    {
+      "id": "repository-selection-ui",
+      "category": "ui_repository_scope",
+      "question": "How does the Repos screen choose the active repository and show its reindex and background job status?",
+      "expected_files": ["frontend/src/pages/Repos.tsx"],
+      "unsupported": false
+    },
+    {
+      "id": "repo-scoped-results-ui",
+      "category": "ui_repository_scope",
+      "question": "How do the Findings and Score screens keep displayed results scoped to the currently selected repository?",
+      "expected_files": ["frontend/src/pages/Findings.tsx", "frontend/src/pages/Score.tsx", "frontend/src/lib/workspace.tsx"],
+      "unsupported": false
+    }
+  ]
+}

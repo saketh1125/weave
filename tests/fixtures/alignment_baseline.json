@@ -1,0 +1,106 @@
+{
+  "cases": [
+    {
+      "id": "dev-status-same",
+      "split": "development",
+      "markdown": [
+        {"path": "docs/api.md", "content": "POST /api/jobs returns HTTP 200"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\nfrom app.routers import jobs\napp = FastAPI()\napp.include_router(jobs.router, prefix=\"/api\")\n"},
+        {"path": "app/routers/jobs.py", "content": "from fastapi import APIRouter\nrouter = APIRouter(prefix=\"/jobs\")\n@router.post(\"\", status_code=200)\ndef create():\n    return {}\n"}
+      ],
+      "expected_statuses": ["aligned"]
+    },
+    {
+      "id": "dev-status-changed",
+      "split": "development",
+      "markdown": [
+        {"path": "docs/api.md", "content": "POST /api/jobs returns HTTP 200"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\nfrom app.routers import jobs\napp = FastAPI()\napp.include_router(jobs.router, prefix=\"/api\")\n"},
+        {"path": "app/routers/jobs.py", "content": "from fastapi import APIRouter\nrouter = APIRouter(prefix=\"/jobs\")\n@router.post(\"\", status_code=202)\ndef create():\n    return {}\n"}
+      ],
+      "expected_statuses": ["outdated"]
+    },
+    {
+      "id": "dev-status-corrected",
+      "split": "development",
+      "markdown": [
+        {"path": "docs/api.md", "content": "POST /api/jobs returns HTTP 202"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\nfrom app.routers import jobs\napp = FastAPI()\napp.include_router(jobs.router, prefix=\"/api\")\n"},
+        {"path": "app/routers/jobs.py", "content": "from fastapi import APIRouter\nrouter = APIRouter(prefix=\"/jobs\")\n@router.post(\"\", status_code=202)\ndef create():\n    return {}\n"}
+      ],
+      "expected_statuses": ["aligned"]
+    },
+    {
+      "id": "dev-no-status-claim",
+      "split": "development",
+      "markdown": [
+        {"path": "README.md", "content": "POST /api/jobs is available."}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\napp = FastAPI()\n@app.post(\"/api/jobs\", status_code=200)\ndef create():\n    return {}\n"}
+      ],
+      "expected_statuses": ["unverified"]
+    },
+    {
+      "id": "eval-success-control",
+      "split": "evaluation",
+      "markdown": [
+        {"path": "docs/routes.md", "content": "GET /v1/health returns 204"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\napp = FastAPI()\n@app.get(\"/v1/health\", status_code=204)\ndef health():\n    return {}\n"}
+      ],
+      "expected_statuses": ["aligned"]
+    },
+    {
+      "id": "eval-duplicate-route",
+      "split": "evaluation",
+      "markdown": [
+        {"path": "docs/routes.md", "content": "GET /v1/items returns 200"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\napp = FastAPI()\n@app.get(\"/v1/items\", status_code=200)\ndef items_a(): return {}\n@app.get(\"/v1/items\", status_code=200)\ndef items_b(): return {}\n"}
+      ],
+      "expected_statuses": ["unverified"]
+    },
+    {
+      "id": "eval-dynamic-response",
+      "split": "evaluation",
+      "markdown": [
+        {"path": "docs/routes.md", "content": "POST /v1/items returns 201"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\napp = FastAPI()\n@app.post(\"/v1/items\", status_code=201)\ndef create():\n    if condition:\n        return JSONResponse({}, status_code=202)\n    return {}\n"}
+      ],
+      "expected_statuses": ["unverified"]
+    },
+    {
+      "id": "eval-unknown-route",
+      "split": "evaluation",
+      "markdown": [
+        {"path": "docs/routes.md", "content": "DELETE /v1/items/{item_id} returns HTTP 204"}
+      ],
+      "code": [
+        {"path": "app/main.py", "content": "from fastapi import FastAPI\napp = FastAPI()\n"}
+      ],
+      "expected_statuses": ["unverified"]
+    },
+    {
+      "id": "eval-changed-publish-status",
+      "split": "evaluation",
+      "markdown": [
+        {"path": "docs/publishing.md", "content": "PUT /publish returns HTTP 201"}
+      ],
+      "code": [
+        {"path": "main.py", "content": "from fastapi import FastAPI\napp = FastAPI()\n@app.put(\"/publish\", status_code=202)\ndef publish(): return {}\n"}
+      ],
+      "expected_statuses": ["outdated"]
+    }
+  ]
+}

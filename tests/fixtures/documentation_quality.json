@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "status": "synthetic_manual_fixture",
+  "notice": "Authored contract examples only; not a representative repository sample or measured model result.",
+  "cases": [
+    {
+      "id": "answer-known-purpose",
+      "task": "answer",
+      "question": "What does this service help with?",
+      "sources": [{"path": "README.md", "kind": "documentation", "content": "# Lantern\nLantern helps maintainers review repository changes before release.\n"}],
+      "expected_facts": ["Lantern helps maintainers review repository changes before release."],
+      "citations": [{"path": "README.md", "start_line": 2, "end_line": 2}],
+      "forbidden_claims": ["Lantern deploys releases automatically."],
+      "expected_outcome": "answer_with_citation"
+    },
+    {
+      "id": "summary-fact-after-source-boundary",
+      "task": "documentation_summary",
+      "question": "Summarize the function's behavior, including its return value.",
+      "sources": [{
+        "path": "src/calculation.py",
+        "kind": "code",
+        "construction": {
+          "prefix": "def calculate():\n",
+          "repeat_text": "    # filler\n",
+          "repeat_count": 260,
+          "suffix": "    return 9\n"
+        }
+      }],
+      "expected_facts": ["calculate returns 9."],
+      "citations": [{"path": "src/calculation.py", "start_line": 262, "end_line": 262}],
+      "forbidden_claims": ["calculate returns 0.", "The function has no return value."],
+      "expected_outcome": "full_context_summary_includes_late_return"
+    },
+    {
+      "id": "answer-doc-code-contradiction",
+      "task": "answer",
+      "question": "What HTTP status does POST /tasks return?",
+      "sources": [
+        {"path": "docs/api.md", "kind": "documentation", "content": "POST /tasks returns HTTP 200.\n"},
+        {"path": "app.py", "kind": "code", "content": "@app.post('/tasks', status_code=202)\ndef create_task():\n    return {}\n"}
+      ],
+      "expected_facts": ["Documentation says 200.", "The implementation declares 202.", "The sources disagree."],
+      "citations": [{"path": "docs/api.md", "start_line": 1, "end_line": 1}, {"path": "app.py", "start_line": 1, "end_line": 1}],
+      "forbidden_claims": ["The endpoint definitively returns 200.", "The endpoint definitively returns 202 in all circumstances."],
+      "expected_outcome": "report_discrepancy_with_both_citations"
+    },
+    {
+      "id": "summary-conditional-branch",
+      "task": "documentation_summary",
+      "question": "Summarize the function's behavior.",
+      "sources": [{"path": "src/worker.py", "kind": "code", "content": "def dispatch(ready):\n    if ready:\n        return 'sent'\n    return 'queued'\n"}],
+      "expected_facts": ["When ready is true, dispatch returns 'sent'.", "Otherwise, dispatch returns 'queued'."],
+      "citations": [{"path": "src/worker.py", "start_line": 1, "end_line": 4}],
+      "forbidden_claims": ["dispatch always sends immediately.", "dispatch retries failed sends."],
+      "expected_outcome": "summary_preserves_both_branches"
+    },
+    {
+      "id": "summary-evaluator-excerpt",
+      "task": "documentation_summary",
+      "question": "Summarize only what this supplied excerpt establishes.",
+      "sources": [{"path": "src/process.py", "kind": "code", "content": "def process():\n    return 7\n"}],
+      "evaluation_context": {
+        "kind": "excerpt",
+        "path": "src/process.py",
+        "start_line": 1,
+        "content": "def process():\n    # body omitted from this supplied excerpt\n"
+      },
+      "expected_facts": ["The supplied excerpt does not establish the function's return behavior."],
+      "citations": [{"path": "src/process.py", "start_line": 1, "end_line": 2}],
+      "forbidden_claims": ["process returns 7.", "The function performs no other work in the omitted source."],
+      "expected_outcome": "excerpt_only_summary_does_not_claim_omitted_source"
+    },
+    {
+      "id": "drift-historical-document",
+      "task": "documentation_code_alignment",
+      "question": "Does the current implementation match the old runbook?",
+      "sources": [
+        {"path": "docs/archive/runbook-2022.md", "kind": "documentation", "content": "Historical procedure (2022): POST /sync returned HTTP 200. This describes the retired v1 service.\n"},
+        {"path": "app.py", "kind": "code", "content": "@app.post('/sync', status_code=202)\ndef sync():\n    return {}\n"}
+      ],
+      "expected_facts": ["The runbook identifies itself as historical and about retired v1.", "Current code declares 202."],
+      "citations": [{"path": "docs/archive/runbook-2022.md", "start_line": 1, "end_line": 1}, {"path": "app.py", "start_line": 1, "end_line": 1}],
+      "forbidden_claims": ["The current service is outdated because it differs from the retired v1 runbook."],
+      "expected_outcome": "label_historical_scope_and_do_not_treat_as_current_contract"
+    },
+    {
+      "id": "answer-conditional-policy",
+      "task": "answer",
+      "question": "When is cache disabled?",
+      "sources": [{"path": "docs/cache.md", "kind": "documentation", "content": "Cache is disabled only when CACHE_ENABLED is false. Otherwise it may be used.\n"}],
+      "expected_facts": ["Cache is disabled when CACHE_ENABLED is false.", "Otherwise cache may be used."],
+      "citations": [{"path": "docs/cache.md", "start_line": 1, "end_line": 1}],
+      "forbidden_claims": ["Cache is always disabled.", "Cache is always enabled."],
+      "expected_outcome": "preserve_condition_and_qualification"
+    },
+    {
+      "id": "answer-no-evidence",
+      "task": "answer",
+      "question": "Which cloud region hosts this service?",
+      "sources": [{"path": "README.md", "kind": "documentation", "content": "Lantern helps maintainers review repository changes before release.\n"}],
+      "expected_facts": [],
+      "citations": [],
+      "forbidden_claims": ["It runs in us-east-1.", "It is hosted in AWS."],
+      "expected_outcome": "abstain_state_unknown_without_invented_citation"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": ["mcp(sentra/*)"],
+    "deny": ["command(*)", "write_file(*)", "read_url(*)", "execute_url(*)"],
+    "ask": []
+  }
+}

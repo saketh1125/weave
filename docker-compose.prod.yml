@@ -1,0 +1,167 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    mem_limit: ${SENTRA_DB_MEMORY:-1g}
+    cpus: ${SENTRA_DB_CPUS:-1.0}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentra
+      POSTGRES_USER: sentra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a strong random value}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentra -d sentra"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [backend]
+
+  api:
+    build: .
+    image: ${SENTRA_IMAGE:-sentra-api}
+    mem_limit: ${SENTRA_API_MEMORY:-1g}
+    cpus: ${SENTRA_API_CPUS:-1.0}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sentra:${POSTGRES_PASSWORD}@db:5432/sentra
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_API_KEY2: ${MISTRAL_API_KEY2:-}
+      SENTRA_LLM_MODEL: mistral-large-4
+      SENTRA_DOCUMENTATION_MODEL: ${SENTRA_DOCUMENTATION_MODEL:-mistral-large-4}
+      SENTRA_MODEL_CONNECTIONS: ${SENTRA_MODEL_CONNECTIONS:-}
+      SENTRA_MODEL_WORKFLOWS: ${SENTRA_MODEL_WORKFLOWS:-}
+      SENTRA_CUSTOM_MODEL_API_KEY: ${SENTRA_CUSTOM_MODEL_API_KEY:-}
+      SENTRA_GH_TOKEN: ${SENTRA_GH_TOKEN:-}
+      SENTRA_ACCESS_TOKEN: ${SENTRA_ACCESS_TOKEN:?Set SENTRA_ACCESS_TOKEN to at least 32 random characters}
+      SENTRA_CORS_ORIGINS: ${SENTRA_CORS_ORIGINS:?Set explicit allowed browser origins}
+      SENTRA_SESSION_TTL_SECONDS: ${SENTRA_SESSION_TTL_SECONDS:-3600}
+      SENTRA_GIT_ALLOWED_HOSTS: ${SENTRA_GIT_ALLOWED_HOSTS:-github.com}
+      SENTRA_REPO_MAX_FILE_BYTES: ${SENTRA_REPO_MAX_FILE_BYTES:-1000000}
+      SENTRA_REPO_MAX_TOTAL_BYTES: ${SENTRA_REPO_MAX_TOTAL_BYTES:-50000000}
+      SENTRA_REPO_MAX_FILES: ${SENTRA_REPO_MAX_FILES:-10000}
+      SENTRA_REPO_MAX_CHUNKS: ${SENTRA_REPO_MAX_CHUNKS:-20000}
+      SENTRA_EMBED_BATCH_SIZE: ${SENTRA_EMBED_BATCH_SIZE:-8}
+    expose: ["8000"]
+    volumes:
+      - reposdata:/app/data/repos
+      - modelcache:/app/data/cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=1g"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    networks: [backend, egress]
+
+  worker:
+    image: ${SENTRA_IMAGE:-sentra-api}
+    command: ["python", "-m", "app.worker"]
+    mem_limit: ${SENTRA_WORKER_MEMORY:-2g}
+    cpus: ${SENTRA_WORKER_CPUS:-2.0}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sentra:${POSTGRES_PASSWORD}@db:5432/sentra
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_API_KEY2: ${MISTRAL_API_KEY2:-}
+      SENTRA_LLM_MODEL: mistral-large-4
+      SENTRA_DOCUMENTATION_MODEL: ${SENTRA_DOCUMENTATION_MODEL:-mistral-large-4}
+      SENTRA_MODEL_CONNECTIONS: ${SENTRA_MODEL_CONNECTIONS:-}
+      SENTRA_MODEL_WORKFLOWS: ${SENTRA_MODEL_WORKFLOWS:-}
+      SENTRA_CUSTOM_MODEL_API_KEY: ${SENTRA_CUSTOM_MODEL_API_KEY:-}
+      SENTRA_GH_TOKEN: ${SENTRA_GH_TOKEN:-}
+      SENTRA_SCAN_JOBS: ${SENTRA_SCAN_JOBS:-2}
+      GOMAXPROCS: "2"
+      OMP_NUM_THREADS: "2"
+      SENTRA_GIT_ALLOWED_HOSTS: ${SENTRA_GIT_ALLOWED_HOSTS:-github.com}
+      SENTRA_REPO_MAX_FILE_BYTES: ${SENTRA_REPO_MAX_FILE_BYTES:-1000000}
+      SENTRA_REPO_MAX_TOTAL_BYTES: ${SENTRA_REPO_MAX_TOTAL_BYTES:-50000000}
+      SENTRA_REPO_MAX_FILES: ${SENTRA_REPO_MAX_FILES:-10000}
+      SENTRA_REPO_MAX_CHUNKS: ${SENTRA_REPO_MAX_CHUNKS:-20000}
+      SENTRA_EMBED_BATCH_SIZE: ${SENTRA_EMBED_BATCH_SIZE:-8}
+    volumes:
+      - reposdata:/app/data/repos
+      - modelcache:/app/data/cache
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=1g"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    networks: [backend, egress]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: /api
+    mem_limit: ${SENTRA_FRONTEND_MEMORY:-128m}
+    cpus: ${SENTRA_FRONTEND_CPUS:-0.5}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    read_only: true
+    user: "101:101"
+    tmpfs: ["/var/cache/nginx:rw,nosuid,nodev,uid=101,gid=101,size=64m", "/var/run:rw,nosuid,nodev,uid=101,gid=101,size=16m", "/tmp:rw,nosuid,nodev,uid=101,gid=101,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    networks: [backend]
+
+  # Keep this profile disabled until runtime checks and deployment access review pass.
+  edge:
+    image: caddy:2-alpine
+    mem_limit: ${SENTRA_EDGE_MEMORY:-128m}
+    cpus: ${SENTRA_EDGE_CPUS:-0.5}
+    profiles: [edge]
+    restart: unless-stopped
+    environment:
+      SENTRA_DOMAIN: ${SENTRA_DOMAIN:?Set SENTRA_DOMAIN to a DNS name you control}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deployment/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks: [backend, edge_egress]
+
+volumes:
+  pgdata:
+  reposdata:
+  modelcache:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    internal: true
+  egress: {}
+  edge_egress: {}
