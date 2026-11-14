@@ -1,4 +1,4 @@
-"""Small desktop controller for Sentra's Docker Compose services."""
+"""Small desktop controller for Weave's Docker Compose services."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ POLL_SECONDS = 3
 class ServiceManager(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Sentra Service Manager")
+        self.title("Weave Service Manager")
         self.geometry("620x430")
         self.minsize(520, 360)
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
@@ -29,14 +29,14 @@ class ServiceManager(tk.Tk):
 
         frame = ttk.Frame(self, padding=18)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="Sentra", font=("TkDefaultFont", 20, "bold")).pack(anchor="w")
+        ttk.Label(frame, text="Weave", font=("TkDefaultFont", 20, "bold")).pack(anchor="w")
         ttk.Label(frame, text="Local services", font=("TkDefaultFont", 10)).pack(anchor="w", pady=(0, 14))
 
         status = ttk.LabelFrame(frame, text="Live status", padding=10)
         status.pack(fill="x")
         self.api_status = tk.StringVar(value="Checking…")
         self.db_status = tk.StringVar(value="Checking…")
-        ttk.Label(status, text="API · http://127.0.0.1:8000/api/ready").grid(row=0, column=0, sticky="w", padx=(0, 16))
+        ttk.Label(status, text="API · http://127.0.0.1:8001/api/ready").grid(row=0, column=0, sticky="w", padx=(0, 16))
         ttk.Label(status, textvariable=self.api_status, width=20).grid(row=0, column=1, sticky="w")
         ttk.Label(status, text="Database · PostgreSQL").grid(row=1, column=0, sticky="w", padx=(0, 16), pady=(6, 0))
         ttk.Label(status, textvariable=self.db_status, width=20).grid(row=1, column=1, sticky="w", pady=(6, 0))
@@ -99,7 +99,7 @@ class ServiceManager(tk.Tk):
 
         def worker() -> None:
             try:
-                with urlopen("http://127.0.0.1:8000/api/ready", timeout=2) as response:
+                with urlopen("http://127.0.0.1:8001/api/ready", timeout=2) as response:
                     import json
                     payload = json.loads(response.read().decode())
                 api = "Ready" if payload.get("status") == "ready" else "Degraded"
@@ -134,7 +134,7 @@ class ServiceManager(tk.Tk):
 
     def open_web(self) -> None:
         import webbrowser
-        webbrowser.open("http://localhost:5173")
+        webbrowser.open("http://localhost:5174")
 
     def close(self) -> None:
         self.closing = True

@@ -130,7 +130,7 @@ def test_runtime_image_uses_pinned_native_cli_and_provider_routing():
     assert "HTTPS_PROXY: http://proxy:3128" in compose
     assert "NO_PROXY: localhost,127.0.0.1,::1,proxy" in compose
     assert "acp-runtime: ../../work/acp-runtime-cache" in compose
-    assert "sentra-antigravity-acp:1.5.8" in compose
+    assert "weave-antigravity-acp:1.5.8" in compose
 
 
 def test_native_cli_archive_pin_and_safe_regular_member_extraction(tmp_path, monkeypatch):

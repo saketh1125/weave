@@ -35,13 +35,13 @@ function WorkspaceChrome({ authenticated, logout, children }: { authenticated: b
   const current = nav.find(item => item.to === location.pathname)
   return <div className={authenticated ? "app-shell" : "auth-shell"}>
     {authenticated && <aside className="workspace-sidebar" aria-label="Workspace sidebar">
-      <NavLink to="/" className="brand"><span className="brand-mark"><Shield size={22} strokeWidth={1.8} aria-hidden="true" /></span><span><strong>Sentra</strong><small>Repository intelligence</small></span></NavLink>
+      <NavLink to="/" className="brand"><span className="brand-mark"><Shield size={22} strokeWidth={1.8} aria-hidden="true" /></span><span><strong>Weave</strong><small>Repository intelligence</small></span></NavLink>
       <p className="sidebar-label">WORKSPACE</p>
       <nav className="workspace-nav" aria-label="Main navigation">{nav.map(item => <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => `workspace-nav-link${isActive ? " is-active" : ""}`}><item.icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{item.label}</span><ChevronRight size={13} className="nav-chevron" aria-hidden="true" /></NavLink>)}</nav>
       <div className="sidebar-footer"><div className="workspace-privacy"><LockKeyhole size={15} aria-hidden="true" /><div><strong>Private workspace</strong><span>Your repositories, in focus.</span></div></div><button onClick={logout} className="signout-button"><LogOut size={15} aria-hidden="true" />Sign out</button></div>
     </aside>}
     <div className={authenticated ? "app-main" : "auth-main"}>
-      <header className="workspace-toolbar">{authenticated ? <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13} aria-hidden="true" /><strong>{current?.label ?? "Sentra"}</strong></div> : <span className="auth-brand"><Shield size={20} aria-hidden="true" /> Sentra</span>}<div className="toolbar-actions"><HealthBadge />{authenticated && <button className="mobile-signout" onClick={logout} aria-label="Sign out"><LogOut size={16} aria-hidden="true" /></button>}</div></header>
+      <header className="workspace-toolbar">{authenticated ? <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13} aria-hidden="true" /><strong>{current?.label ?? "Weave"}</strong></div> : <span className="auth-brand"><Shield size={20} aria-hidden="true" /> Weave</span>}<div className="toolbar-actions"><HealthBadge />{authenticated && <button className="mobile-signout" onClick={logout} aria-label="Sign out"><LogOut size={16} aria-hidden="true" /></button>}</div></header>
       <main id="main-content" className={authenticated ? "workspace-content" : "auth-content"}>{children}</main>
     </div>
   </div>
@@ -54,7 +54,7 @@ export default function App() {
   const [authError, setAuthError] = useState("")
 
   useEffect(() => {
-    const saved = sessionStorage.getItem("sentra_access_token") ?? ""
+    const saved = sessionStorage.getItem("weave_access_token") ?? ""
     if (!saved) { setChecking(false); return }
     setAccessToken(saved)
     api.checkAuth().then(() => setAuthenticated(true)).catch(() => {

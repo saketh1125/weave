@@ -30,9 +30,9 @@ def test_sensitive_route_rejects_invalid_token():
 
 
 def test_authentication_errors_remain_readable_from_allowed_frontend_origin():
-    response = _client().get("/api/repos", headers={"Origin": "http://localhost:5173"})
+    response = _client().get("/api/repos", headers={"Origin": "http://localhost:5174"})
     assert response.status_code == 401
-    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5174"
 
 
 def test_raw_access_key_is_not_accepted_as_a_session():
@@ -109,13 +109,13 @@ def test_configured_origin_can_send_authorization_header():
     response = _client().options(
         "/api/repos",
         headers={
-            "Origin": "http://localhost:5173",
+            "Origin": "http://localhost:5174",
             "Access-Control-Request-Method": "GET",
             "Access-Control-Request-Headers": "authorization",
         },
     )
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5174"
 
 
 def test_cors_configuration_rejects_wildcard_and_malformed_origins():

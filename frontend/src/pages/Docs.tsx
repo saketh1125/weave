@@ -52,7 +52,7 @@ export default function Docs() {
   const [behavioral, setBehavioral] = useState(false)
   const [clockNow, setClockNow] = useState(() => Date.now())
   const [indexedCommit, setIndexedCommit] = useState<{ repoId: string; sha: string | null } | null>(null)
-  const repoId = localStorage.getItem("sentra.repoId")
+  const repoId = localStorage.getItem("weave.repoId")
   const { result, retryUntil, invalid: invalidStoredDocs } = readStoredDocs(workspace.docsResult, repoId)
   const retryRemaining = docsRetryRemainingSeconds(retryUntil, clockNow)
   const countdownActive = retryRemaining > 0

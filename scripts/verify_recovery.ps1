@@ -1,4 +1,4 @@
-param([string]$Image = 'sentra-candidate:login-fix')
+param([string]$Image = 'weave-candidate:login-fix')
 $ErrorActionPreference = 'Stop'
 $prefix = 'sentra-recovery-' + [guid]::NewGuid().ToString('N')
 $network = "$prefix-net"

@@ -15,7 +15,7 @@ export default function Ask() {
   const saved = workspace.askResult as { repoId: string; result: Answer } | null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const repoId = localStorage.getItem("sentra.repoId")
+  const repoId = localStorage.getItem("weave.repoId")
   const result = saved?.repoId === repoId ? saved.result : null
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -24,18 +24,18 @@ export default function Ask() {
     setBusy(true); setError("")
     try {
       const answer = await api.post<Answer>(`/repos/${repoId}/ask`, { question, top_k: 5 })
-      if (localStorage.getItem("sentra.repoId") === repoId) setWorkspace(previous => ({ ...previous, askResult: { repoId, result: answer } }))
+      if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, askResult: { repoId, result: answer } }))
     } catch (e) {
-      if (localStorage.getItem("sentra.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not answer this question")
+      if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not answer this question")
     } finally { setBusy(false) }
   }
 
-    if (!repoId) return <div className="page-stack"><PageIntro eyebrow="REPOSITORY INTELLIGENCE" title="Ask Sentra" description="Explore your codebase with answers grounded in its sources." /><EmptyState icon={<MessageSquareText className="h-6 w-6" />} title="Select a repository first" description="Choose one on the Repos page, then ask questions about its code and documentation." /></div>
+    if (!repoId) return <div className="page-stack"><PageIntro eyebrow="REPOSITORY INTELLIGENCE" title="Ask Weave" description="Explore your codebase with answers grounded in its sources." /><EmptyState icon={<MessageSquareText className="h-6 w-6" />} title="Select a repository first" description="Choose one on the Repos page, then ask questions about its code and documentation." /></div>
   return <div className="page-stack">
-    <PageIntro eyebrow="REPOSITORY INTELLIGENCE" title="Ask Sentra" description="Explore your codebase with answers grounded in its sources." />
+    <PageIntro eyebrow="REPOSITORY INTELLIGENCE" title="Ask Weave" description="Explore your codebase with answers grounded in its sources." />
     <Card><CardHeader><CardTitle>What would you like to understand?</CardTitle><CardDescription>Search indexed code and Markdown documentation, with file and line citations.</CardDescription></CardHeader><CardContent>
-      <form onSubmit={submit} className="grid gap-3"><textarea aria-label="Your question" required value={question} onChange={e => setWorkspace(previous => ({ ...previous, askQuestion: e.target.value }))} rows={4} placeholder="Ask a question about this repository…" className="w-full rounded-xl border bg-background p-4 text-sm" /><div className="flex justify-end"><Button type="submit" disabled={busy || !question.trim()}>{busy ? "Searching…" : "Ask Sentra"}</Button></div></form>
-      <p className="mt-3 text-xs text-muted-foreground">When a model connection is configured, retrieved code and documentation snippets are sent to its provider to draft the answer. Without it, Sentra returns matching sources and citations only.</p>
+      <form onSubmit={submit} className="grid gap-3"><textarea aria-label="Your question" required value={question} onChange={e => setWorkspace(previous => ({ ...previous, askQuestion: e.target.value }))} rows={4} placeholder="Ask a question about this repository…" className="w-full rounded-xl border bg-background p-4 text-sm" /><div className="flex justify-end"><Button type="submit" disabled={busy || !question.trim()}>{busy ? "Searching…" : "Ask Weave"}</Button></div></form>
+      <p className="mt-3 text-xs text-muted-foreground">When a model connection is configured, retrieved code and documentation snippets are sent to its provider to draft the answer. Without it, Weave returns matching sources and citations only.</p>
       {error && <p role="alert" className="notice notice-error mt-4">{error}</p>}
     </CardContent></Card>
     {result && <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="eyebrow">RESPONSE</div><CardTitle>Answer</CardTitle></div><ModelBadge model={result.llm_model || result.model} /></div><CardDescription>{result.llm_model ? "Generated answer" : "Retrieved sources"}</CardDescription></CardHeader><CardContent className="grid gap-6">

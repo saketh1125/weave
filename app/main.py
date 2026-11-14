@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Sentra API", version="0.1.0", lifespan=lifespan,
+    title="Weave API", version="0.1.0", lifespan=lifespan,
     openapi_url="/api/openapi.json", docs_url="/api/docs", redoc_url="/api/redoc",
 )
 

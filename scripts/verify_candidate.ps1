@@ -1,5 +1,5 @@
 param(
-    [string]$Image = 'sentra-candidate:phase4'
+    [string]$Image = 'weave-candidate:phase4'
 )
 
 # Exercise the built application's sources, not a source bind mount. Only test

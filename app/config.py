@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://sentra:sentra@localhost:5432/sentra"
+    database_url: str = "postgresql+asyncpg://sentra:sentra@localhost:5433/sentra"
     mistral_api_key: str = ""
     mistral_api_key2: str = ""
     documentation_model: str = Field(
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     sentra_scan_jobs: int = Field(default=2, ge=1, le=8)
     sentra_repo_max_chunks: int = Field(default=20000, ge=1)
     sentra_access_token: str = ""
-    sentra_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    sentra_cors_origins: str = "http://localhost:5174,http://127.0.0.1:5174"
     session_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
 
     @property

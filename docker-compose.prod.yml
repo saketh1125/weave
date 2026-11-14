@@ -1,3 +1,5 @@
+name: weave
+
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -20,7 +22,7 @@ services:
 
   api:
     build: .
-    image: ${SENTRA_IMAGE:-sentra-api}
+    image: ${SENTRA_IMAGE:-weave-api}
     mem_limit: ${SENTRA_API_MEMORY:-1g}
     cpus: ${SENTRA_API_CPUS:-1.0}
     restart: unless-stopped
@@ -66,7 +68,7 @@ services:
     networks: [backend, egress]
 
   worker:
-    image: ${SENTRA_IMAGE:-sentra-api}
+    image: ${SENTRA_IMAGE:-weave-api}
     command: ["python", "-m", "app.worker"]
     mem_limit: ${SENTRA_WORKER_MEMORY:-2g}
     cpus: ${SENTRA_WORKER_CPUS:-2.0}

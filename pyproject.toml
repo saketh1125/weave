@@ -1,7 +1,7 @@
 [project]
-name = "sentra"
+name = "weave"
 version = "0.1.0"
-description = "Sentra — engineering trust platform (FastAPI + pgvector)"
+description = "AI-powered repository intelligence and engineering verification platform"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",

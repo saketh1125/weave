@@ -29,7 +29,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://sentra:sentra@localhost:5432/sentra
       SENTRA_TEST_DATABASE_URL: postgresql+psycopg://sentra:sentra@localhost:5432/sentra
       SENTRA_ACCESS_TOKEN: ci-only-test-token-that-is-not-a-secret
-      SENTRA_CORS_ORIGINS: http://localhost:5173
+      SENTRA_CORS_ORIGINS: http://localhost:5174
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

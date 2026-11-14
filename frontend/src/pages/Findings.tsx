@@ -10,7 +10,7 @@ import { useWorkspace } from "@/lib/workspace"
 type Finding = { id: string; module: string; severity: string; source?: string; explanation?: string; location?: { path?: string; start_line?: number; end_line?: number }; detail?: Record<string, unknown> }
 
 export default function Findings() {
-  const repoId = localStorage.getItem("sentra.repoId")
+  const repoId = localStorage.getItem("weave.repoId")
   const { workspace, setWorkspace } = useWorkspace()
   const saved = workspace.findings[0] as { repoId: string; result: Finding[] } | undefined
   const items = saved?.repoId === repoId ? saved.result : []
@@ -20,16 +20,16 @@ export default function Findings() {
   const [error, setError] = useState("")
   const load = useCallback(async () => {
     if (!repoId) return
-    try { const findings = await api.get<Finding[]>(`/repos/${repoId}/findings`); if (localStorage.getItem("sentra.repoId") === repoId) { setWorkspace(previous => ({ ...previous, findings: [{ repoId, result: findings }] })); setError("") } }
-    catch (e) { if (localStorage.getItem("sentra.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not load findings") }
+    try { const findings = await api.get<Finding[]>(`/repos/${repoId}/findings`); if (localStorage.getItem("weave.repoId") === repoId) { setWorkspace(previous => ({ ...previous, findings: [{ repoId, result: findings }] })); setError("") } }
+    catch (e) { if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not load findings") }
   }, [repoId, setWorkspace])
   useEffect(() => { setSelected(null); setError(""); void load(); return () => window.clearTimeout(refreshTimer.current) }, [load])
 
   async function scan() {
     if (!repoId) return
     setBusy(true); setError("")
-    try { await api.post(`/repos/${repoId}/scan`, { modules: ["m2", "m4"] }); refreshTimer.current = window.setTimeout(() => { if (localStorage.getItem("sentra.repoId") === repoId) void load() }, 4000) }
-    catch (e) { if (localStorage.getItem("sentra.repoId") === repoId) setError(e instanceof Error ? e.message : "Scan failed") }
+    try { await api.post(`/repos/${repoId}/scan`, { modules: ["m2", "m4"] }); refreshTimer.current = window.setTimeout(() => { if (localStorage.getItem("weave.repoId") === repoId) void load() }, 4000) }
+    catch (e) { if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Scan failed") }
     finally { setBusy(false) }
   }
 

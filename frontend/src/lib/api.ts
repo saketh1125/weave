@@ -1,7 +1,7 @@
 import type { ModelSettings, ModelSettingsUpdate } from "./model-settings"
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api"
-const TOKEN_KEY = "sentra_access_token"
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8001/api"
+const TOKEN_KEY = "weave_access_token"
 
 function accessToken(): string {
   return sessionStorage.getItem(TOKEN_KEY) ?? ""

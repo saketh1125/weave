@@ -10,21 +10,21 @@ type ScoreData = { score: number; label: string; deduction?: number; breakdown: 
 const moduleNames: Record<string, string> = { m2: "Static analysis", m4: "Dependency vulnerabilities", m5: "Pull request risk", m6: "Documentation drift", other: "Other findings" }
 
 export default function Score() {
-  const repoId = localStorage.getItem("sentra.repoId")
+  const repoId = localStorage.getItem("weave.repoId")
   const { workspace, setWorkspace } = useWorkspace()
   const saved = workspace.score as { repoId: string; result: ScoreData } | null
   const data = saved?.repoId === repoId ? saved.result : null
   const [error, setError] = useState("")
   async function load() {
     if (!repoId) return
-    try { const score = await api.get<ScoreData>(`/repos/${repoId}/score`); if (localStorage.getItem("sentra.repoId") === repoId) { setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })); setError("") } }
-    catch (e) { if (localStorage.getItem("sentra.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not load score") }
+    try { const score = await api.get<ScoreData>(`/repos/${repoId}/score`); if (localStorage.getItem("weave.repoId") === repoId) { setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })); setError("") } }
+    catch (e) { if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not load score") }
   }
   useEffect(() => { void load() }, [repoId])
   async function snapshot() {
     if (!repoId) return
-    try { const score = await api.post<ScoreData>(`/repos/${repoId}/score`, {}); if (localStorage.getItem("sentra.repoId") === repoId) setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })) }
-    catch (e) { if (localStorage.getItem("sentra.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not save score snapshot") }
+    try { const score = await api.post<ScoreData>(`/repos/${repoId}/score`, {}); if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })) }
+    catch (e) { if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not save score snapshot") }
   }
   if (!repoId) return <div className="page-stack"><PageIntro eyebrow="Repository health" title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view its readiness score." /></div>
   const weights = data?.config_snapshot?.sev_weight ?? { critical: 10, high: 5, medium: 2, low: 0.5, unknown: 0.5 }

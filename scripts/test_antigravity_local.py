@@ -215,7 +215,7 @@ async def run(model=None, login=False, probe=False, job=None, allow_source_uploa
     root = ROOT / "work"
     root.mkdir(exist_ok=True)
     identity = uuid.uuid4().hex
-    project, container = "sentra-acp-test-" + identity, "sentra-acp-" + identity
+    project, container = "weave-acp-test-" + identity, "weave-acp-" + identity
     with tempfile.TemporaryDirectory(prefix="acp-fixture-", dir=root, ignore_cleanup_errors=True) as directory:
         fixture = Path(directory)
         job_file = fixture / "job.json"
@@ -246,7 +246,7 @@ async def run(model=None, login=False, probe=False, job=None, allow_source_uploa
         progress = {}
         monitor = None
         try:
-            await command(["docker", "volume", "create", "sentra-antigravity-local-profile"], env)
+            await command(["docker", "volume", "create", "weave-antigravity-local-profile"], env)
             services = ["proxy"] if probe else ["proxy", "source-tools"]
             await command(compose + ["up", "-d", "--wait", "--wait-timeout", "20"] + services, env)
             stage = "container"

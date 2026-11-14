@@ -13,7 +13,7 @@ from app.model_connections import ProviderError
 def configuration():
     if os.environ.get("SENTRA_ANTIGRAVITY_ENABLED", "").lower() != "true":
         return None
-    url = os.environ.get("SENTRA_AGENT_BRIDGE_URL", "http://host.docker.internal:9217")
+    url = os.environ.get("SENTRA_AGENT_BRIDGE_URL", "http://host.docker.internal:9218")
     parsed = urlsplit(url)
     token = os.environ.get("SENTRA_AGENT_BRIDGE_TOKEN", "")
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "host.docker.internal"}

@@ -1,4 +1,4 @@
-"""Local, token-protected ACP job service. No Docker socket enters Sentra containers."""
+"""Local, token-protected ACP job service. No Docker socket enters Weave containers."""
 import asyncio
 import hashlib
 import hmac
@@ -248,9 +248,9 @@ def main():
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
     bridge = Bridge(os.environ.get("SENTRA_AGENT_BRIDGE_TOKEN", ""))
-    server = ThreadingHTTPServer(("127.0.0.1", 9217), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", 9218), Handler)
     server.bridge = bridge
-    print("Sentra local Antigravity bridge listening on 127.0.0.1:9217", flush=True)
+    print("Weave local Antigravity bridge listening on 127.0.0.1:9218", flush=True)
     try:
         server.serve_forever()
     finally:

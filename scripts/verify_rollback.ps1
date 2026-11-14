@@ -1,5 +1,5 @@
 param(
-    [string]$Image = 'sentra-candidate:login-fix',
+    [string]$Image = 'weave-candidate:login-fix',
     [string]$PreviousApiImage = ''
 )
 
