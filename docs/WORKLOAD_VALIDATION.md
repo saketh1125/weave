@@ -1,5 +1,9 @@
 # Synthetic ingestion workload baseline
 
+> **Inherited Sentra record.** This document preserves earlier technical context,
+> not a fresh Weave acceptance result. Original experiment artifacts and personal
+> session records are excluded. See [Migration](MIGRATION.md) for current verification.
+
 Run `python scripts/evaluate_workload.py` for the fixed small profile, or add
 `--profile medium` for the larger bounded profile. Both generate their corpus
 locally and print a JSON report. The optional `--root` points to an empty

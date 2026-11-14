@@ -1,6 +1,6 @@
 # Request body claim checks
 
-Sentra compares explicit documentation claims with statically indexed FastAPI
+Weave compares explicit documentation claims with statically indexed FastAPI
 request model declarations. A matching field default verifies that default,
 not the endpoint's full behavior or the documentation as a whole.
 

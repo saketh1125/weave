@@ -1,7 +1,8 @@
-# Sentra
+# Weave
 
-Sentra is a local-first engineering trust tool for understanding whether a
-software repository is ready to change or release. It indexes Python and
+Weave is an **AI-powered repository intelligence and engineering verification
+platform** for understanding whether a software repository is ready to change
+or release. It runs locally with server-managed model connections. It indexes Python and
 JavaScript/TypeScript code and Markdown files, answers questions with source citations, generates
 code documentation and checks it for drift, runs static and dependency
 security scans, reviews GitHub pull requests against existing findings, and
@@ -14,6 +15,9 @@ and PR summaries. Mistral remains the default; server-managed OpenAI-compatible
 connections can be selected per workflow. Documentation maintenance can propose
 Markdown-only edits and open a PR after exact-draft approval. Review agents do
 not modify source code or publish changes themselves.
+
+This is an independent project with a fresh Git history and private repository:
+[saketh1125/weave](https://github.com/saketh1125/weave).
 
 ## Run locally
 
@@ -32,21 +36,26 @@ if you want the desktop service manager.
    private. All `/api/*` routes except `/api/health`, `/api/ready`, and the
    `/api/auth/token` login endpoint require a valid unexpired bearer session.
    Health endpoints reveal only status.
-2. Start the API and database:
+2. Copy `frontend/.env.example` to `frontend/.env` for the local frontend API URL.
+   Weave uses API port **8001**, database port **5433**, and frontend port **5174**
+   to coexist with the original application. Use new credentials; no original
+   database, model cache, authentication profile, or `.env` was migrated.
+
+3. Start the API and database:
 
    ```sh
    docker compose up --build -d
    ```
 
-3. Start the frontend:
+4. Start the frontend:
 
    ```sh
    npm --prefix frontend ci
    npm --prefix frontend run dev
    ```
 
-Open the Vite URL, normally `http://localhost:5173`. The API is available at
-`http://127.0.0.1:8000/api`; `/api/health` and `/api/ready` report service health. The first
+Open the Vite URL, normally `http://localhost:5174`. The API is available at
+`http://127.0.0.1:8001/api`; `/api/health` and `/api/ready` report service health. The first
 build installs the analysis tools, and the first repository embedding run
 downloads the BGE model.
 
@@ -54,7 +63,7 @@ To start or stop the Compose services with a desktop window, run
 `python3 service_manager.py`. It shows live API/database readiness and service
 command output. Start the frontend separately using the command above.
 
-## Use Sentra
+## Use Weave
 
 Add a repository using its HTTPS Git URL, wait for indexing to finish, then
 select it as active. The **Ask**, **Docs & Drift**, **Findings**, **PR Risk**,
@@ -85,7 +94,8 @@ the selected code, Markdown excerpts, or PR context needed for the requested ope
 - [Data model](docs/DATA_MODEL.md)
 - [Scoring model](docs/SCORING.md)
 - [Privacy, integrations, and operations](docs/OPERATIONS_AND_PRIVACY.md)
-- [Research and architecture decisions](Sentra_research.md) (historical planning record)
+- [Migration, independent setup, and retained identifiers](docs/MIGRATION.md)
+- [Historical architecture decisions](docs/decisions/DECISION_LOG.md)
 
 PostgreSQL data, cloned repositories, and embedding model files persist in
 Docker volumes (`pgdata`, `reposdata`, `modelcache`). `docker compose down`

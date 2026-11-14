@@ -1,5 +1,9 @@
 # Semgrep scanner dependency advisory review
 
+> **Inherited Sentra record.** This document preserves earlier technical context,
+> not a fresh Weave acceptance result. Original experiment artifacts and personal
+> session records are excluded. See [Migration](MIGRATION.md) for current verification.
+
 **Reviewed:** 2026-11-11
 
 **Scope:** Semgrep CLI invoked by Sentra's background scan worker; five OSV findings in `requirements-semgrep.lock` (four `mcp` advisories and one `opentelemetry-api` advisory). This is a reachability assessment, not an exception or a claim that the dependencies are generally safe.

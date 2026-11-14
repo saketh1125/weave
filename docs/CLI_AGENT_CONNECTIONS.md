@@ -1,6 +1,10 @@
 # CLI agent connections
 
-Assessed 2026-11-13. No production CLI-backed review adapter is enabled in Sentra.
+> Native-provider observations below are inherited Sentra validation, not a fresh
+> Weave account/profile test. Configure Weave independently and retest before
+> enabling the optional reviewer. No authenticated profile was migrated.
+
+Assessed 2026-11-13. No production CLI-backed review adapter is enabled in Weave.
 An opt-in local ACP experiment now exists; see
 [runner configuration and acceptance test](../deployment/antigravity/README.md).
 It uses the official native CLI, isolated Docker execution and a private MCP
@@ -26,13 +30,13 @@ Read-only inspection of the installed application's source under
   model selection, permission requests, prompt results, usage and cancellation.
   Cancellation has escalation when the session does not acknowledge stopping.
 - The inspected account helper also reads runtime token state for account display.
-  Sentra does not copy that implementation or access those tokens.
+  Weave does not copy that implementation or access those tokens.
 
 Reusable architectural ideas are a separate agent/session contract, bounded
 structured events, exact session identity, explicit permission handling and
 cancel/terminate escalation. The implementation was not copied; neither source
 availability nor another application's working sign-in establishes authorization
-for Sentra to reuse a consumer account.
+for Weave to reuse a consumer account.
 
 ## Supported routes and the unresolved boundary
 
@@ -43,7 +47,7 @@ server-side model service. The current
 [consumer terms](https://antigravity.google/terms), clause 6, restrict third-party
 access and explicitly identify third-party use of Antigravity OAuth. The editor
 integration documentation and this restriction must be interpreted within the
-specific supported use case; we have not established that Sentra's background
+specific supported use case; we have not established that Weave's background
 review orchestration is authorized under a personal subscription.
 
 Google separately documents an
@@ -52,7 +56,7 @@ Cloud/Vertex credentials, plus a
 [managed agent API](https://ai.google.dev/gemini-api/docs/antigravity-agent).
 Those are genuine programmatic routes worth evaluating. They do not prove free
 consumer-subscription access, model entitlement, price or permission under the
-user's particular account. They have not been implemented or tested in Sentra.
+user's particular account. They have not been implemented or tested in Weave.
 
 Decision: do not implement a consumer OAuth relay, extract tokens, call private
 endpoints or bypass provider restrictions. The local experiment uses documented
@@ -62,7 +66,7 @@ An OpenAI-compatible endpoint is a separate
 integration and must actually implement that protocol; ACP cannot be configured
 as a chat-completions URL.
 
-## Sentra extension contract
+## Weave extension contract
 
 `app/agent_connections.py` defines a review-agent protocol separate from direct
 model APIs, immutable session bindings and bounded policy/result envelopes. All
@@ -74,7 +78,7 @@ Registration of a future adapter requires:
 1. A documented, authorized provider route and pinned runtime/protocol versions.
 2. An immutable, read-only repository snapshot, no host home or GitHub credential
    inheritance, and externally enforced provider-only network access.
-3. No source writes, branch creation or publication privileges. Sentra retains
+3. No source writes, branch creation or publication privileges. Weave retains
    citation validation, Markdown draft creation and exact-hash approval.
 4. A bounded wall-clock deadline, steps, output bytes and process resources;
    cancellation must terminate the entire process tree and clean up sessions.

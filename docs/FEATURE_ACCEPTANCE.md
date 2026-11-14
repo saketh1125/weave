@@ -1,5 +1,9 @@
 # Feature acceptance and baseline
 
+> **Inherited Sentra record.** This document preserves earlier technical context,
+> not a fresh Weave acceptance result. Original experiment artifacts and personal
+> session records are excluded. See [Migration](MIGRATION.md) for current verification.
+
 **Status:** Phase 0 working draft, 2026-11-11. Thresholds below are provisional
 and are not results. This document records code and test inspection plus the
 current figures already stated in `EXECUTION_PLAN.md`; it does not claim a new
@@ -146,7 +150,7 @@ files in the three repositories are indexed and readable.
 277 backend tests, 13 frontend contracts and the frontend build passed. These
 are partial selected-file spot checks, not whole-repository acceptance or an
 independent accuracy estimate. Detailed source, runtime and failure provenance:
-[real repository evidence](evidence/documentation_real_repositories.json).
+real repository evidence (historical artifact excluded from Weave).
 
 
 ## Model connection checkpoint — 2026-11-13
@@ -160,4 +164,4 @@ account terms or model quality. The running stack remains unchanged.
 
 Antigravity is assessed, not enabled. See [model configuration](MODEL_CONNECTIONS.md),
 [CLI feasibility](CLI_AGENT_CONNECTIONS.md), and
-[validation evidence](evidence/model_connections_validation.json).
+validation evidence (historical artifact excluded from Weave).

@@ -1,5 +1,9 @@
 # Database rollback rehearsal
 
+> **Inherited Sentra record.** This document preserves earlier technical context,
+> not a fresh Weave acceptance result. Original experiment artifacts and personal
+> session records are excluded. See [Migration](MIGRATION.md) for current verification.
+
 This rehearsal checks PostgreSQL schema and data recovery for the current
 candidate migrations. It does not deploy Sentra or contact a provider, Git
 host, or external service.
@@ -10,7 +14,7 @@ From the repository root in PowerShell, with Docker Desktop running and both
 images already available locally:
 
 ```powershell
-docker build -t sentra-candidate:login-fix .
+docker build -t weave-candidate:login-fix .
 docker pull pgvector/pgvector:pg17
 ./scripts/verify_rollback.ps1
 ```
@@ -18,14 +22,14 @@ docker pull pgvector/pgvector:pg17
 To use a candidate image with another local tag:
 
 ```powershell
-./scripts/verify_rollback.ps1 -Image sentra-candidate:your-tag
+./scripts/verify_rollback.ps1 -Image weave-candidate:your-tag
 ```
 
 To additionally smoke-test an already available prior API image against the
 restored snapshot, provide its exact local tag or image ID explicitly:
 
 ```powershell
-./scripts/verify_rollback.ps1 -Image sentra-candidate:login-fix -PreviousApiImage <prior-api-image>
+./scripts/verify_rollback.ps1 -Image weave-candidate:login-fix -PreviousApiImage <prior-api-image>
 ```
 
 The script does not choose, pull, or default a prior API image. Docker must be

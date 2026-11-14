@@ -1,9 +1,13 @@
 # Disposable worker recovery rehearsal
 
+> **Inherited Sentra record.** This document preserves earlier technical context,
+> not a fresh Weave acceptance result. Original experiment artifacts and personal
+> session records are excluded. See [Migration](MIGRATION.md) for current verification.
+
 Run from PowerShell with Docker running and the locally built candidate image and `pgvector/pgvector:pg17` available:
 
 ```powershell
-./scripts/verify_recovery.ps1 -Image sentra-candidate:login-fix
+./scripts/verify_recovery.ps1 -Image weave-candidate:login-fix
 ```
 
 The script creates a uniquely named, labeled internal network with no external connectivity, PostgreSQL volume and containers, without published ports, host credentials, the project `.env`, or existing services. It deletes only resources bearing its own random sentinel label. It uses the real worker loop, child process, job leasing, PostgreSQL advisory locks and persisted job result. Two competing workers are started while the first holds the repository lock. The fixture expires its lease while that lock is held, checks no contender runs it, kills the first container with SIGKILL, conditionally expires the original token again in case a heartbeat renewed it, checks exactly one contender reclaims it with a new token, then releases it and verifies the stored result and cleared lease.

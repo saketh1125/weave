@@ -1,6 +1,8 @@
-# Sentra documentation
+# Weave documentation
 
 Use these documents for the current implementation:
+
+- [Migration and fresh verification](MIGRATION.md) — independent setup, retained identifiers, and exclusions.
 
 - [Model connections](MODEL_CONNECTIONS.md) — server-side providers, quotas,
   workflow selection and saved-session compatibility.
@@ -19,8 +21,7 @@ Use these documents for the current implementation:
 - [Resource incident](resource-incident.md) — historical retrieval experiment
   resource-limit investigation.
 
-`development-status.md`, `SESSION_PROGRESS.md`, and `../Sentra_research.md`
-preserve earlier research checkpoints. Their original “not implemented” or
-“blocked” status statements are historical; use `IMPLEMENTATION_STATUS.md` for
-the current product state. Files under `evidence/` are experiment outputs, not
-live application state.
+Historical design and validation notes retain their original Sentra provenance.
+Academic reports, personal session logs, cached experiment outputs, and runtime
+state were excluded from this independent project. See [Migration](MIGRATION.md)
+for the fresh Weave verification, exclusions, and compatibility identifiers.

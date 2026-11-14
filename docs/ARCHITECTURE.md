@@ -1,6 +1,6 @@
-# Sentra architecture
+# Weave architecture
 
-Sentra is a local-first repository analysis application. The React frontend
+Weave is a local-first repository analysis application. The React frontend
 calls a FastAPI service; FastAPI stores repository state in PostgreSQL with
 pgvector and runs indexing and analysis tools against a local clone.
 

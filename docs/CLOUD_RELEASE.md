@@ -1,6 +1,6 @@
 # Cloud release runbook
 
-Updated 2026-11-11. This is a provider-neutral preparation guide. Sentra has
+Updated 2026-11-11. This is a provider-neutral preparation guide. Weave has
 not been deployed to a cloud environment, and no provider, region, access
 pattern, domain, budget, or availability target has been selected.
 

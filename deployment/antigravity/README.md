@@ -1,10 +1,14 @@
 # Local Antigravity documentation-review experiment
 
-This opt-in local integration uses Google's native CLI 1.5.8 ACP runtime over stdio JSON-RPC. Sentra's Settings panel connects through a token-protected loopback bridge. The documentation worker supports this reviewer; API model adapters remain separate. This is not a cloud deployment route and never resumes saved native conversations.
+> Native-provider observations below are inherited Sentra validation, not a fresh
+> Weave account/profile test. Configure Weave independently and retest before
+> enabling the optional reviewer. No authenticated profile was migrated.
+
+This opt-in local integration uses Google's native CLI 1.5.8 ACP runtime over stdio JSON-RPC. Weave's Settings panel connects through a token-protected loopback bridge. The documentation worker supports this reviewer; API model adapters remain separate. This is not a cloud deployment route and never resumes saved native conversations.
 
 Verified checkpoint: 430 backend tests and 15 frontend tests, native initialization,
 container-to-container MCP read/record/finish, digest/citation validation and Docker
-isolation checks passed. See [evidence](../../docs/evidence/antigravity_local_validation.json).
+isolation checks passed. See evidence (historical artifact excluded from Weave).
 Live fixture review passed with `gemini-3.8-flash`, including the browser's Test connection action. Other offered models have not been tested.
 
 ## Build and test
@@ -18,7 +22,7 @@ SHA-512: `f08faaee588327dba8722bdc60f26a14f6915a8f2d756ed7959cde0a706d4e62fd9f83
 The build validates the checksum, exact member size and regular-file archive layout. No installer script is executed.
 
 ```powershell
-docker build --build-context acp-runtime=./work/acp-runtime-cache -f deployment/antigravity/Dockerfile -t sentra-antigravity-acp:1.5.8 .
+docker build --build-context acp-runtime=./work/acp-runtime-cache -f deployment/antigravity/Dockerfile -t weave-antigravity-acp:1.5.8 .
 python scripts/test_antigravity_local.py --probe
 ```
 
@@ -28,9 +32,9 @@ The probe only initializes ACP; it does not authenticate or send a model prompt.
 python scripts/test_antigravity_local.py --login
 ```
 
-This invokes the provider's documented native terminal setup and then reviews an invented README/code fixture. Subsequent runs omit `--login`. `--model MODEL_ID` selects only an ID offered by the actual session. There is no client identity spoofing or assumed model/context entitlement. Native terminal setup is not captured or parsed by Sentra.
+This invokes the provider's documented native terminal setup and then reviews an invented README/code fixture. Subsequent runs omit `--login`. `--model MODEL_ID` selects only an ID offered by the actual session. There is no client identity spoofing or assumed model/context entitlement. Native terminal setup is not captured or parsed by Weave.
 
-The dedicated Docker volume `sentra-antigravity-local-profile` retains the runtime's own profile between runs. No host profile is copied. Treat this volume as sensitive and do not export it. Run one local experiment at a time; Compose cleanup intentionally retains the profile.
+The dedicated Docker volume `weave-antigravity-local-profile` retains the runtime's own profile between runs. No host profile is copied. Treat this volume as sensitive and do not export it. Run one local experiment at a time; Compose cleanup intentionally retains the profile.
 
 ## Documentation-first investigation
 
@@ -38,7 +42,7 @@ The prompt starts from one assigned Markdown section. A private MCP sidecar offe
 
 Timeouts pause a review as `agent_timeout`; explicit provider throttling pauses it as `rate_limited`. Completed sections remain saved, and an explicit resume starts the pending section in a fresh native session. Safe operation, tool-step/error counts and RPC codes are retained in task state; native error text is never persisted. `invalid_agent_result` remains reserved for malformed or unbound results. Runtime or validator changes invalidate earlier review bindings: retest the connection and create a new review rather than resuming incompatible runs.
 
-The host polls the bounded evidence sidecar every five seconds. Sentra validates each checkpoint against the model/runtime binding, snapshot, claim schema and actual source reads before saving claims and activity under the job lease. The UI polls saved state every two seconds and shows the current section, tool steps, errors and recorded claims. Activity is not a completion percentage. A timeout retains validated claims while keeping the section pending; explicit continuation starts a fresh native session, supplies bounded previously assessed claim context, and deduplicates repeated claims. Claims that were never recorded cannot be recovered. No native reasoning text is stored.
+The host polls the bounded evidence sidecar every five seconds. Weave validates each checkpoint against the model/runtime binding, snapshot, claim schema and actual source reads before saving claims and activity under the job lease. The UI polls saved state every two seconds and shows the current section, tool steps, errors and recorded claims. Activity is not a completion percentage. A timeout retains validated claims while keeping the section pending; explicit continuation starts a fresh native session, supplies bounded previously assessed claim context, and deduplicates repeated claims. Claims that were never recorded cannot be recovered. No native reasoning text is stored.
 
 Findings reuse the API reviewer's claim/citation validator. Only source ranges actually returned by tools are eligible evidence. Final prose is not parsed as findings. The host retrieves accepted results from the sidecar and checks their job digest. Missing completion returns `incomplete`, never an implicit alignment verdict. A section with no factual claims may complete only after explicit `finish_review` confirmation with a reason and zero tool errors; it contributes zero assessed claims. The fixture additionally checks that documented port 80 conflicts with source port 8080.
 

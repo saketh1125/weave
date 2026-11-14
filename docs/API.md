@@ -5,7 +5,7 @@ All routes in this reference are served under the `/api` prefix. For example,
 API routes require a signed bearer session except `/api/health`, `/api/ready`,
 and the single-user login exchange at `/api/auth/token`.
 
-Base URL for local development: `http://127.0.0.1:8000`. JSON request and
+Base URL for local development: `http://127.0.0.1:8001`. JSON request and
 response bodies are used unless stated otherwise. Repository identifiers are
 UUIDs. The running OpenAPI schema is available at `/api/openapi.json`.
 

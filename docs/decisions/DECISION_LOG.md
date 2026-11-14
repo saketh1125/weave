@@ -1,5 +1,9 @@
 # Sentra — Architecture Decision Log
 
+> **Inherited Sentra record.** This document preserves earlier technical context,
+> not a fresh Weave acceptance result. Original experiment artifacts and personal
+> session records are excluded. See [Migration](../MIGRATION.md) for current verification.
+
 > **Historical decision record.** Several “pending” labels and environment
 > observations below describe the pre-integration research checkpoint, not the
 > current running application. The implementation uses BGE-small-en-v1.5

@@ -62,7 +62,7 @@ disabled until Docker runtime checks and production access review pass.
 
 ## Troubleshooting
 
-- API readiness: open `http://127.0.0.1:8000/api/ready` or inspect `docker compose
+- API readiness: open `http://127.0.0.1:8001/api/ready` or inspect `docker compose
   logs -f api`.
 - Database: `docker compose ps` should show `db` healthy before API readiness.
 - Ingestion: wait for repository status `ready`; if it is `failed`, retry via

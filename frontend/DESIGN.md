@@ -1,4 +1,4 @@
-# Sentra workspace design
+# Weave workspace design
 
 The private-preview interface uses graphite surfaces, muted jade actions and warm
 system typography. Semantic status colors are independent of the brand accent:

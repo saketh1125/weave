@@ -43,7 +43,7 @@ Code-unit summaries are a separate existing feature, not document updates.
   documentation excerpt and code citations that were actually read. Markdown
   cannot serve as code evidence for its own claims. Citation validity does not
   prove the model's reasoning is correct.
-- Checkpoint serializable graph state in Sentra's database after steps, with
+- Checkpoint serializable graph state in Weave's database after steps, with
   the worker's current lease fencing writes. This first slice uses application
   checkpoint callbacks, not LangGraph's native PostgreSQL checkpointer.
 - Bound model calls, context and tool results. Retain completed assessments
@@ -241,7 +241,7 @@ PramanaGST review `bbae2a4a-4702-4f18-a63b-5e165cbc2ab5` accepted the stale
 TailwindCSS stack claim with documentation and manifest citations. Independent
 inspection confirmed it. A real Mistral-generated partial draft removed only
 TailwindCSS from one Markdown line. The exact draft hash was approved and
-published through Sentra as [PramanaGST PR #1](https://github.com/saketh1125/PramanaGST/pull/1).
+published through Weave as [PramanaGST PR #1](https://github.com/saketh1125/PramanaGST/pull/1).
 The PR changes one Markdown file (+1/-1), remains unmerged, and its CI passed.
 Repeating publication returned the same PR. The live frontend restored the
 published draft, partial-scope notice, diff and PR link after reload.

@@ -1,12 +1,12 @@
-# Sentra Frontend
+# Weave Frontend
 
 Vite + React + TypeScript + Tailwind CSS + shadcn/ui.
 
 ## Dev
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
+npm ci
+npm run dev      # http://localhost:5174
 npm run build    # production build
 ```
 
@@ -15,7 +15,7 @@ npm run build    # production build
 Copy `.env.example` to `.env`:
 
 ```
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8001/api
 ```
 
 ## Routes

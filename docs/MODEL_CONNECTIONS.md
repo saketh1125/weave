@@ -1,6 +1,6 @@
 # Model connections
 
-Assessed 2026-11-13. Sentra's server-side model registry supports Mistral and
+Assessed 2026-11-13. Weave's server-side model registry supports Mistral and
 OpenAI-compatible chat-completions endpoints. The registry stores configuration
 and environment-variable names, never API key values.
 
@@ -104,7 +104,7 @@ the capability names `tools`, `json_object`, and `json_schema`; a request for an
 undeclared capability is rejected. JSON-schema responses are validated locally.
 The OpenAI-compatible adapter rejects unsupported reasoning fields and does not
 support streaming. A compatible endpoint must implement the chat-completions
-protocol. Sentra does not invoke model CLIs through this connection registry;
+protocol. Weave does not invoke model CLIs through this connection registry;
 see [CLI agent connections](CLI_AGENT_CONNECTIONS.md) for that separate design
 boundary.
 
@@ -176,7 +176,7 @@ contract tests. Cloud deployments should also constrain service egress at the
 network layer. Do not expose a connection-editing API to untrusted users.
 
 There is no automatic credential rotation or hidden fallback to another
-provider. A `reviewer` list defines explicit reviewer lanes; Sentra assigns
+provider. A `reviewer` list defines explicit reviewer lanes; Weave assigns
 review work to those lanes and records their connection settings. It does not
 silently switch credentials when a request fails. Change the workflow mapping
 deliberately if you want a different provider.
@@ -213,14 +213,14 @@ API adapters. It does not provide planner, draft generation or Q/A APIs. The
 settings page requires a live invented-fixture test before enabling the selected
 runtime-offered model as reviewer. Available model IDs are discovered from the
 actual account; discovery does not verify every offered model. Existing Markdown
-draft approval and publication remain in Sentra and use the configured draft API.
+draft approval and publication remain in Weave and use the configured draft API.
 
 Start `python scripts/antigravity_bridge.py` on the Docker host, with a server-only
 `SENTRA_AGENT_BRIDGE_TOKEN` of at least 32 random characters in `.env`. Enable
 `SENTRA_ANTIGRAVITY_ENABLED=true` and configure
-`SENTRA_AGENT_BRIDGE_URL=http://host.docker.internal:9217` for the local API and
+`SENTRA_AGENT_BRIDGE_URL=http://host.docker.internal:9218` for the local API and
 worker, then recreate those services. The bridge listens only on loopback. For a
-host-native API use `http://127.0.0.1:9217`. Only these explicit local hostnames
+host-native API use `http://127.0.0.1:9218`. Only these explicit local hostnames
 are accepted; redirects, browser origins and unauthenticated bridge calls are
 rejected. This route is disabled in the production Compose configuration.
 

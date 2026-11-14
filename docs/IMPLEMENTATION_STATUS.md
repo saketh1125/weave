@@ -1,68 +1,49 @@
-# Implementation status
+# Weave implementation status
 
-**Updated:** 2026-10-25
+**Migration verification: 2026-11-14.** Weave was established from the latest
+local working files, including uncommitted documentation-review fixes. It has
+fresh Git history and its own private remote. Earlier Sentra validation records
+are historical context, not Weave production acceptance.
 
-> Historical checkpoint: the runtime evidence below describes the 2026-10-25
-> environment. On 2026-11-03 the current Windows machine did not have Docker
-> Desktop/CLI, so the Compose/database/end-to-end checks were not repeated.
+## Preserved capabilities
 
-Sentra now has a working local backend and frontend. The earlier P0 status and
-session notes remain useful as research records, but their statements that
-implementation has not started describe an earlier checkpoint. This file is
-the current implementation checkpoint.
+- Repository indexing, Markdown ingestion, local embeddings and source-cited Q&A.
+- Static analysis and dependency findings, repository scores and PR review.
+- Documentation-first claim investigation, evidence/citation validation, durable
+  progress checkpoints and continuation of pending sections.
+- Markdown-only update drafts, exact-draft approval and guarded PR publication.
+- Provider-independent API connections and an optional isolated local ACP reviewer.
+- Single-user authentication, bounded jobs, database migrations and recovery tools.
 
-## Working locally
+## Verified for this migration
 
-- FastAPI and pgvector start with `docker compose up --build -d`; `/health` and
-  `/ready` report healthy.
-- Repository ingestion clones public or token-authorized GitHub repositories,
-  parses supported source, creates BGE embeddings, and persists data in named
-  Docker volumes.
-- Semgrep and OSV scans feed findings and readiness score snapshots.
-- Retrieval, cited Q&A, generated documentation, and documentation drift routes
-  are connected to the frontend. Mistral generation requires `MISTRAL_API_KEY`.
-- GitHub PR review joins changed paths with open findings, summarizes diffs,
-  and supports PR-specific Q&A grounded in PR metadata and available patches.
-  Private GitHub access uses `SENTRA_GH_TOKEN`.
-- The frontend preserves results and entered Ask/PR text across section changes
-  during the browser session. Finding details include conceptual fix guidance;
-  score details explain weights, caps, and deductions.
+- Backend image built from Weave's own application source and locked dependencies.
+- **449 backend tests passed**, including disposable PostgreSQL integration tests.
+- Frontend dependencies installed with `npm ci`; production build passed.
+- **18 frontend contract tests passed.**
+- Credential checks compared included files with existing real credential values
+  and scanned token/private-key patterns. No matches were included.
 
-## Current verification
+The backend suite reports an existing pytest warning about an empty regular
+expression match. Vite reports an existing configuration-loader warning.
+Neither warning failed the checks.
 
-- Docker API and database health checks pass; database migration is applied.
-- A public repository was ingested, embedded, and scanned end to end.
-- Retrieval, live Mistral answer and documentation generation, drift, and live
-  GitHub PR review and PR Q&A were exercised. Mistral calls can be rate-limited.
-- Frontend production build, Python compile check, Compose config validation,
-  and `git diff --check` pass.
-- The PR-specific Q&A route was exercised with Mistral against a reviewed PR.
-  The frontend production build and Python compile check passed after the
-  corresponding changes.
+## Configuration and remaining verification
 
-## Known limits
+No `.env`, database, model download, cloned repository, cached experiment output,
+or authenticated runtime profile was copied. Set fresh credentials using the safe
+configuration templates. API routes, database schema and `SENTRA_*` environment
+keys remain compatible; see [Migration](MIGRATION.md).
 
-- PR review currently reads the first 100 changed files.
-- Generated answers, docs, PR summaries, and PR Q&A send selected repository
-  context to Mistral. Mistral rate limits can leave generated text unavailable.
-- The API binds to localhost. Docker named volumes persist across `down`; use
-  `docker compose down -v` only when intentionally deleting local state.
+Local ports are frontend 5174, API 8001, PostgreSQL 5433 and optional ACP bridge
+9218. The internal container API/database ports remain 8000/5432. Compose uses
+project `weave`, its own named volumes and default image `weave-api`.
 
-See [README](../README.md) for setup and [development-status.md](development-status.md)
-and [SESSION_PROGRESS.md](SESSION_PROGRESS.md) for historical spike evidence.
+Live model generation, native ACP authentication, scanning a new repository,
+GitHub PR publication, and cloud deployment were not rerun for this migration.
+The complete 165-section repository review was not rerun. Timeout recovery and
+partial-claim persistence are covered by the backend suite; model-dependent
+investigations may still pause at their configured deadline.
 
-Current implementation details are in [Architecture](ARCHITECTURE.md),
-[API](API.md), [Data model](DATA_MODEL.md), [Scoring](SCORING.md), and
-[Operations and privacy](OPERATIONS_AND_PRIVACY.md).
-
-## Sprint 3 security checkpoint (2026-11-03)
-
-- Backend single-user login exchanges the environment access key for an
-  HMAC-signed, expiring bearer session; all sensitive `/api/*` routes and OpenAPI
-  require that session. CORS permits only validated explicit origins.
-- Production Compose now prepares an Nginx static frontend, internal-only
-  API/database network, separate API/Caddy egress, health checks, restart
-  policies, persistent volumes, and an opt-in TLS Caddy profile.
-- Current Python security suite and frontend build passed. Docker Compose/build,
-  migrations, readiness against PostgreSQL, and end-to-end runtime remain
-  unverified because Docker is unavailable. Keep the Caddy profile disabled.
+See [README](../README.md), [Architecture](ARCHITECTURE.md),
+[Model connections](MODEL_CONNECTIONS.md), and [Migration](MIGRATION.md).
