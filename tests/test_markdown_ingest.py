@@ -75,3 +75,44 @@ def test_markdown_coverage_guard_catches_invalid_utf8_but_accepts_empty_markdown
 
     assert chunk_markdown(b'', 'empty.md') == []
     _require_complete_markdown({'empty.md'}, {'empty.md'})
+
+
+@pytest.mark.asyncio
+async def test_incomplete_source_scan_fails_before_index_reconciliation(tmp_path, monkeypatch):
+    import uuid
+    from types import SimpleNamespace
+    from app import ingest
+
+    repo_id = uuid.uuid4()
+    checkout = tmp_path / str(repo_id)
+    (checkout / '.git').mkdir(parents=True)
+    (checkout / 'missing.py').write_text('print(1)', encoding='utf-8')
+    repo = SimpleNamespace(branch='main', status='ready')
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, model, key):
+            return repo
+
+        async def commit(self):
+            pass
+
+        async def execute(self, statement):
+            pytest.fail('incomplete scan must not reconcile the index')
+
+    monkeypatch.setattr(ingest, 'SessionLocal', Session)
+    monkeypatch.setattr(ingest, 'DATA_REPOS', tmp_path)
+    monkeypatch.setattr(ingest, 'validate_remote_url', lambda *args: None)
+    monkeypatch.setattr(ingest, 'validate_local_git_config', lambda *args: None)
+    monkeypatch.setattr(ingest, '_run_git', lambda *args, **kwargs: 'sha')
+    monkeypatch.setattr(ingest, '_markdown_paths', lambda root: [])
+    monkeypatch.setattr(ingest, 'read_checkout_files', lambda *args, **kwargs: iter(()))
+
+    result = await ingest.ingest_repo(repo_id, 'https://example.test/repo')
+    assert result['error'] == 'source ingestion incomplete (1 omitted): missing.py'
+    assert repo.status == 'failed'

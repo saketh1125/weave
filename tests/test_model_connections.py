@@ -276,3 +276,56 @@ async def test_identical_credentials_cannot_split_same_origin_quota(monkeypatch)
     monkeypatch.setenv('SENTRA_MODEL_CONNECTIONS', json.dumps({'other':cfg}))
     with pytest.raises(mc.ProviderError) as exc: await mc.complete([])
     assert exc.value.reason == 'invalid_configuration' and 'same-secret' not in str(exc.value)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('nested', [False, True])
+@pytest.mark.parametrize('status,code,reason,retryable', [
+    (401, 'invalid_api_key', 'invalid_credentials', False),
+    (403, 'tier_not_allowed', 'model_access_denied', False),
+    (403, 'other', 'provider_access_denied', False),
+    (404, 'model_not_found', 'invalid_model', False),
+    (404, 'other', 'provider_invalid_request', False),
+    (400, 'other', 'provider_invalid_request', False),
+    (422, 'other', 'provider_invalid_request', False),
+    (408, 'other', 'timeout', True),
+    (504, 'other', 'timeout', True),
+    (503, 'other', 'provider_unavailable', True),
+])
+async def test_http_error_contract_redacts_provider_body(monkeypatch, status, code, reason, retryable, nested):
+    monkeypatch.setenv('MISTRAL_API_KEY', 'credential-secret')
+    async def respond(request):
+        error = {'type': 'provider_error', 'code': code, 'message': 'credential-secret source-private'}
+        return httpx.Response(status, json={'error': error} if nested else error)
+    monkeypatch.setattr(mc, '_transport', lambda connection: httpx.MockTransport(respond))
+    with pytest.raises(mc.ProviderError) as exc:
+        await mc.complete([{'role': 'user', 'content': 'source-private'}])
+    error = exc.value
+    assert error.reason == reason and error.retryable is retryable
+    assert error.diagnostic() == {'reason': reason, 'status_code': status, **({'provider_code': code} if code in mc.SAFE_PROVIDER_CODES else {})}
+    assert 'credential-secret' not in str(error.diagnostic()) and 'source-private' not in str(error.diagnostic())
+
+@pytest.mark.asyncio
+async def test_provider_connection_failure_is_retryable_and_redacted(monkeypatch):
+    monkeypatch.setenv('MISTRAL_API_KEY', 'credential-secret')
+    async def fail(request): raise httpx.ConnectError('credential-secret source-private')
+    monkeypatch.setattr(mc, '_transport', lambda connection: httpx.MockTransport(fail))
+    with pytest.raises(mc.ProviderError) as exc:
+        await mc.complete([])
+    assert exc.value.retryable and exc.value.diagnostic() == {'reason': 'provider_connection_failed'}
+    assert 'credential-secret' not in str(exc.value) and 'source-private' not in str(exc.value)
+
+@pytest.mark.asyncio
+async def test_provider_error_body_read_is_bounded(monkeypatch):
+    monkeypatch.setenv('MISTRAL_API_KEY', 'secret')
+    chunks = []
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for i in range(100):
+                chunks.append(i)
+                yield b'x' * 1000
+    async def respond(request): return httpx.Response(503, stream=Body())
+    monkeypatch.setattr(mc, '_transport', lambda connection: httpx.MockTransport(respond))
+    with pytest.raises(mc.ProviderError) as exc:
+        await mc.complete([])
+    assert exc.value.reason == 'provider_unavailable'
+    assert len(chunks) <= 17

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { INVALID_DOCUMENTATION_REVIEW, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining } from "../src/lib/documentation-review.ts"
+import { INVALID_DOCUMENTATION_REVIEW, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage } from "../src/lib/documentation-review.ts"
 
 const valid = {
   run_id: "run-1", job_id: "job-1", commit_sha: "abc123", status: "completed", model: "mistral-large", retry_after_seconds: null,
@@ -91,4 +91,19 @@ test("bounds paused-review cooldowns and handles unsafe clocks", () => {
   assert.equal(reviewRetryRemaining(40_000, 10_000), 30)
   assert.equal(reviewRetryRemaining(40_000, 40_000), 0)
   assert.equal(reviewRetryRemaining(Number.MAX_SAFE_INTEGER + 1, 10_000), 0)
+})
+
+test("explains review failures and bounds unknown reasons", () => {
+  for (const reason of ["model_access_denied", "provider_access_denied"]) {
+    assert.match(reviewReasonMessage(reason), /entitlement/)
+    assert.match(reviewReasonMessage(reason), /accessible configured model/)
+  }
+  for (const reason of ["timeout", "provider_unavailable", "provider_connection_failed", "agent_timeout"]) {
+    assert.match(reviewReasonMessage(reason), /continue the review/i)
+  }
+  for (const reason of ["invalid_credentials", "invalid_model", "provider_invalid_request", "run_budget_exhausted"]) {
+    assert.notEqual(reviewReasonMessage(reason), reason)
+  }
+  assert.equal(reviewReasonMessage("unknown_reason"), "unknown_reason")
+  assert.equal(reviewReasonMessage("x".repeat(201)).length, 200)
 })

@@ -7,8 +7,8 @@ from app.db import SessionLocal
 from app.models import Job, Repository, DocumentationReview, DocumentationReviewTask
 from .snapshot import SnapshotTools
 
-MAX_RUN_CALLS = 200
-MAX_RUN_TOKENS = 16000000
+class RunBudgetExhausted(Exception):
+    pass
 
 
 def merge_assessments(previous, current):
@@ -61,6 +61,7 @@ async def run_review(job):
         run.status = 'running'
         tasks = (await session.execute(select(DocumentationReviewTask).where(DocumentationReviewTask.run_id == run_id).order_by(DocumentationReviewTask.path, DocumentationReviewTask.start_line))).scalars().all()
         snapshot, model, manifest = run.snapshot, run.model, dict(run.manifest)
+        limits = provider.review_limits()
         await session.commit()
 
     async def request(messages, tool_specs, *, model, max_tokens, credential_slot=1, planning=False, prompt_tokens_upper_bound=None, force_assessment=False):
@@ -83,7 +84,7 @@ async def run_review(job):
             if planning:
                 all_tasks = (await session.execute(select(DocumentationReviewTask).where(DocumentationReviewTask.run_id == run_id))).scalars().all()
                 reserve = len(json.dumps(messages, ensure_ascii=False).encode()) + max_tokens
-                if q.get('planner_calls', 0) + sum((t.state or {}).get('calls', 0) for t in all_tasks) >= MAX_RUN_CALLS or q.get('planner_tokens', 0) + sum((t.state or {}).get('tokens', 0) for t in all_tasks) + reserve > MAX_RUN_TOKENS:
+                if q.get('planner_calls', 0) + sum((t.state or {}).get('calls', 0) for t in all_tasks) >= limits['calls'] or q.get('planner_tokens', 0) + sum((t.state or {}).get('tokens', 0) for t in all_tasks) + reserve > limits['tokens']:
                     raise provider.ProviderError('run_budget_exhausted', request_sent=False)
                 q['planner_calls'] = q.get('planner_calls', 0) + 1
                 q['planner_tokens'] = q.get('planner_tokens', 0) + reserve
@@ -152,7 +153,9 @@ async def run_review(job):
         async with SessionLocal() as session:
             await fenced(session, job)
             run = await session.get(DocumentationReview, run_id, with_for_update=True)
-            run.status = 'paused' if reason == 'rate_limited' else 'failed'
+            run.status = 'paused' if isinstance(exc, provider.ProviderError) and exc.retryable else 'failed'
+            if isinstance(exc, provider.ProviderError):
+                data = dict(run.manifest); data['provider_failure'] = exc.diagnostic(); run.manifest = data
             run.reason = reason
             run.retry_after_seconds = getattr(exc, 'retry_after_seconds', None)
             await session.commit()
@@ -174,14 +177,20 @@ async def run_review(job):
                 async with SessionLocal() as session:
                     await fenced(session, job)
                     run = await session.get(DocumentationReview, run_id, with_for_update=True)
+                    if run.reason == 'run_budget_exhausted':
+                        raise RunBudgetExhausted
                     locked = await session.get(DocumentationReviewTask, task.id, with_for_update=True)
                     all_tasks = (await session.execute(select(DocumentationReviewTask).where(DocumentationReviewTask.run_id == run_id))).scalars().all()
                     q = run.manifest.get('review_quota', {})
                     calls = q.get('planner_calls', 0) + sum((t.state or {}).get('calls', 0) for t in all_tasks if t.id != task.id) + state.get('calls', 0)
                     tokens = q.get('planner_tokens', 0) + sum((t.state or {}).get('tokens', 0) for t in all_tasks if t.id != task.id) + state.get('tokens', 0)
-                    if calls > MAX_RUN_CALLS or tokens > MAX_RUN_TOKENS: raise RuntimeError('Run budget exhausted')
+                    exceeded = calls > limits['calls'] or tokens > limits['tokens']
                     locked.state = state; locked.assessments = assessment_rows(state.get('assessments', []))
+                    if exceeded:
+                        run.status, run.reason = 'failed', 'run_budget_exhausted'
                     await session.commit()
+                    if exceeded:
+                        raise RunBudgetExhausted
             async def complete(messages, tool_specs, *, model, max_tokens, prompt_tokens_upper_bound=None, force_assessment=False):
                 return await request(messages, tool_specs, model=model, max_tokens=max_tokens, credential_slot=slot, prompt_tokens_upper_bound=prompt_tokens_upper_bound, force_assessment=force_assessment)
             if is_agent:
@@ -218,13 +227,18 @@ async def run_review(job):
                     except provider.ProviderError as exc:
                         result = {'status': 'failed', 'reason': exc.reason}
             else:
-                result = await review_section(section, tools, model=model_connections.resolve('reviewer', slot).model, state=task.state or None, save_state=save_state, complete=complete)
+                try:
+                    result = await review_section(section, tools, model=model_connections.resolve('reviewer', slot).model, state=task.state or None, save_state=save_state, complete=complete)
+                except RunBudgetExhausted:
+                    return
             async with SessionLocal() as session:
                 await fenced(session, job)
                 run = await session.get(DocumentationReview, run_id, with_for_update=True)
                 current = await session.get(DocumentationReviewTask, task.id, with_for_update=True)
                 if not compatible(run):
                     result = {'status': 'failed', 'reason': 'model_configuration_changed'}
+                if run.reason == 'run_budget_exhausted':
+                    return
                 if is_agent:
                     state = {**(current.state or {}), **result.get('state', {})}
                     if 'assessments' in result:

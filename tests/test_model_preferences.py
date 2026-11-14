@@ -81,3 +81,51 @@ def test_review_agent_selection_fails_closed():
     with use_preferences(Preferences({"reviewer": "antigravity_local"}, "model", None, None)):
         with pytest.raises(ProviderError):
             get_review_agent_selection()
+
+
+@pytest.mark.asyncio
+async def test_api_connection_probe_contract_and_single_quota_call(monkeypatch):
+    from app.routers import model_settings as api
+    connection = api._registry()[0]["mistral_primary"]
+    calls = []
+    async def request(messages, tools, **kwargs):
+        calls.append((messages, tools, kwargs))
+        return {"tool_calls": [{"function": {"name": "connection_probe", "arguments": '{"ok":true}'}}]}, {}
+    monkeypatch.setattr(api.model_quota, "request", request)
+    assert await api.test_api_connection(connection.name) == {"status": "passed", "reason": None, "status_code": None, "provider_code": None}
+    assert len(calls) == 1 and calls[0][2]["connection"] == connection and calls[0][2]["max_tokens"] <= 128
+    assert calls[0][1][0]["function"]["name"] == "connection_probe"
+    async def invalid(*args, **kwargs):
+        return {"tool_calls": [{"function": {"name": "connection_probe", "arguments": '{"ok":1}'}}]}, {}
+    monkeypatch.setattr(api.model_quota, "request", invalid)
+    assert (await api.test_api_connection(connection.name))["reason"] == "invalid_response"
+
+
+@pytest.mark.asyncio
+async def test_api_connection_failure_redacts_and_unknown_id_does_not_call(monkeypatch):
+    from app.routers import model_settings as api
+    async def request(*args, **kwargs):
+        raise api.model_connections.ProviderError("model_access_denied", status_code=403, provider_code="tier_not_allowed")
+    monkeypatch.setattr(api.model_quota, "request", request)
+    result = await api.test_api_connection("mistral_primary")
+    assert result == {"status": "failed", "reason": "model_access_denied", "status_code": 403, "provider_code": "tier_not_allowed"}
+    with pytest.raises(HTTPException) as exc:
+        await api.test_api_connection("unknown")
+    assert exc.value.status_code == 404
+    async def unsafe(*args, **kwargs):
+        raise api.model_connections.ProviderError("secret", status_code=403, provider_code="secret")
+    monkeypatch.setattr(api.model_quota, "request", unsafe)
+    assert "secret" not in str(await api.test_api_connection("mistral_primary"))
+
+
+@pytest.mark.asyncio
+async def test_api_connection_text_only_requires_ok(monkeypatch):
+    from dataclasses import replace
+    from app.routers import model_settings as api
+    connection = replace(api._registry()[0]["mistral_primary"], capabilities=())
+    monkeypatch.setattr(api, "_registry", lambda: ({connection.name: connection}, {}))
+    async def request(messages, tools, **kwargs):
+        assert tools == []
+        return {"content": "OK"}, {}
+    monkeypatch.setattr(api.model_quota, "request", request)
+    assert (await api.test_api_connection(connection.name))["status"] == "passed"

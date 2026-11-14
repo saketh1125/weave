@@ -58,6 +58,7 @@ class GraphState(TypedDict, total=False):
     invalid_tool_requests: int
     model: str
     next_call_at: float
+    provider_failure: dict
     prompt_accounting: dict | None
 
 
@@ -185,7 +186,8 @@ async def review_section(section: dict, tools: object, *, model: str = provider.
                     st["calls"] -= 1
                     st["tokens"] -= reserve
                     invocation_calls -= 1
-                st.update(status="paused" if exc.reason == "rate_limited" else "failed", reason=exc.reason, retry_after_seconds=exc.retry_after_seconds)
+                st.update(status="paused" if exc.retryable else "failed", reason=exc.reason, retry_after_seconds=exc.retry_after_seconds)
+                st["provider_failure"] = exc.diagnostic()
                 if exc.reason == "rate_limited":
                     st["next_call_at"] = time.time() + max(1.1, exc.retry_after_seconds or 60)
         await snapshot(st)
@@ -213,19 +215,21 @@ async def review_section(section: dict, tools: object, *, model: str = provider.
                     if set(args) != {"path", "start_line", "end_line"} or not valid_citation(args, [dict(path=args.get("path"), start_line=1, end_line=10000000)]) or args["end_line"] - args["start_line"] > 199: raise ValueError
                     result = await tools.read_source(**args)
                     if not isinstance(result, dict) or result.get("path") != args["path"] or result.get("start_line") != args["start_line"] or type(result.get("end_line")) is not int or not args["start_line"] <= result["end_line"] <= args["end_line"] or not isinstance(result.get("content"), str) or len(result["content"].encode()) > MAX_TOOL_BYTES or len(result["content"].splitlines()) != result["end_line"] - result["start_line"] + 1: raise ValueError
-                    st["read_ranges"].append({k: result[k] for k in ("path", "start_line", "end_line")})
                 elif name == "list_files":
                     if set(args) - {"query"} or ("query" in args and (not isinstance(args["query"], str) or len(args["query"]) > 200)): raise ValueError
                     result = await tools.list_files(**args)
                 elif name == "semantic_search":
-                    if set(args) - {"query", "limit"} or not isinstance(args.get("query"), str) or not 1 <= len(args["query"]) <= 1000 or ("limit" in args and (type(args["limit"]) is not int or not 1 <= args["limit"] <= 10)): raise ValueError
+                    if set(args) - {"query", "limit"} or not isinstance(args.get("query"), str) or not 1 <= len(args["query"]) <= 200 or ("limit" in args and (type(args["limit"]) is not int or not 1 <= args["limit"] <= 10)): raise ValueError
                     result = await tools.semantic_search(**args)
                 elif name == "search_source":
                     if set(args) - {"query", "limit"} or not isinstance(args.get("query"), str) or not 1 <= len(args["query"]) <= 200 or ("limit" in args and (type(args["limit"]) is not int or not 1 <= args["limit"] <= 50)): raise ValueError
                     result = await tools.search_source(**args)
                 else: raise ValueError
                 payload = json.dumps(result, ensure_ascii=False)
-                if len(payload.encode()) > MAX_TOOL_BYTES: payload = json.dumps({"error": "result_too_large"})
+                if len(payload.encode()) > MAX_TOOL_BYTES:
+                    payload = json.dumps({"error": "result_too_large"})
+                elif name == "read_source":
+                    st["read_ranges"].append({k: result[k] for k in ("path", "start_line", "end_line")})
             except AssessmentValidationError as exc:
                 st["invalid_tool_requests"] = st.get("invalid_tool_requests", 0) + 1
                 payload = json.dumps(exc.feedback, ensure_ascii=False)

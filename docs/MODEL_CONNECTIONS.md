@@ -14,10 +14,11 @@ connection also recognizes `SENTRA_MISTRAL_API_KEY` for existing direct
 deployments. Mistral's built-in connection declares tool calling and JSON-object
 response support.
 
-No external model provider was contacted for this implementation. Examples use
-placeholder hostnames and credentials; transport behavior is verified with
-mock responses and a real local HTTP fixture. Provider compatibility and model
-entitlements still need a separately authorized smoke test.
+Examples use placeholder hostnames and credentials; transport behavior is verified
+with mock responses and a real local HTTP fixture. On 2026-11-14, both configured
+Mistral keys returned HTTP 403 `tier_not_allowed` for `mistral-large-4`. This is
+an account/model access restriction, not HTTP 429 rate limiting. Configure a
+model the account can access; Weave does not silently switch models or providers.
 
 ## Configure a custom API connection
 
@@ -136,7 +137,12 @@ TPM, pacing, and concurrency limits; all connections in a group must declare
 the same values for those settings. Give credentials that share a provider
 account or provider quota the same group. Use distinct groups only when the
 provider grants independent quotas. Per-review run budgets add another bound to
-documentation reviews.
+API-based documentation reviews. `SENTRA_DOCUMENTATION_MAX_RUN_CALLS` and
+`SENTRA_DOCUMENTATION_MAX_RUN_TOKENS` configure the run ceilings (example defaults:
+200 calls and 16,000,000 tokens). Reaching a ceiling can leave a review incomplete;
+it does not establish that an entire repository has been reviewed. These run ceilings
+do not apply to Antigravity native-agent reviews, which have their own bounded
+execution and do not report token usage for this accounting.
 
 Identical credential references cannot be assigned separate groups; identical
 credential values on the same origin are also checked privately at call time.
@@ -209,7 +215,9 @@ reviewer chooses one lane. API requests and review workers each use a consistent
 preference snapshot. Changed selections invalidate incompatible saved reviews.
 
 Antigravity is an opt-in **local documentation reviewer**, separate from direct
-API adapters. It does not provide planner, draft generation or Q/A APIs. The
+API adapters. Weave requires its own bridge setup and verification; the bridge
+was unavailable or unconfigured during the 2026-11-14 check, so it is not
+verified as connected. It does not provide planner, draft generation or Q/A APIs. The
 settings page requires a live invented-fixture test before enabling the selected
 runtime-offered model as reviewer. Available model IDs are discovered from the
 actual account; discovery does not verify every offered model. Existing Markdown

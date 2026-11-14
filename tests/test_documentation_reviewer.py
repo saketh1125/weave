@@ -177,3 +177,71 @@ async def test_legacy_resume_adds_tool_guidance_once_without_replacing_history(m
     final = await reviewer.review_section(SECTION, Tools(), state=state, save_state=save, complete=resumed)
     assert final['status'] == 'completed'
     assert final['state']['tool_guidance_version'] == 1
+
+@pytest.mark.asyncio
+async def test_oversized_serialized_source_is_not_citable(monkeypatch):
+    async def save(state): pass
+    async def no_delay(_): pass
+    monkeypatch.setattr(reviewer.asyncio, "sleep", no_delay)
+    class EscapedSource(Tools):
+        async def read_source(self, path, start_line, end_line):
+            return {"path": path, "start_line": start_line, "end_line": end_line, "content": '"' * 8000}
+    responses = [call("read_source", {"path": "app.py", "start_line": 1, "end_line": 1}), call("record_assessment", assessment())]
+    async def complete(messages, tools, **kwargs):
+        if len(responses) == 1:
+            assert json.loads(messages[-1]["content"]) == {"error": "result_too_large"}
+        if responses: return responses.pop(0), {}
+        assert json.loads(messages[-1]["content"])["reason"] == "unread_source_citation"
+        return {"role": "assistant", "content": "Done."}, {}
+    result = await reviewer.review_section(SECTION, EscapedSource(), save_state=save, complete=complete)
+    assert result["state"]["read_ranges"] == []
+    assert result["assessments"] == []
+
+@pytest.mark.asyncio
+async def test_semantic_search_rejects_query_over_snapshot_limit(monkeypatch):
+    async def save(state): pass
+    async def no_delay(_): pass
+    monkeypatch.setattr(reviewer.asyncio, "sleep", no_delay)
+    class SemanticTools(Tools):
+        async def semantic_search(self, query, limit=5):
+            assert len(query) == 200
+            return []
+    responses = [call("semantic_search", {"query": "x" * 200}), call("semantic_search", {"query": "x" * 201})]
+    async def complete(messages, tools, **kwargs):
+        if responses: return responses.pop(0), {}
+        assert json.loads(messages[-1]["content"])["error"] == "invalid_tool_request_or_result"
+        return {"role": "assistant", "content": "Done."}, {}
+    result = await reviewer.review_section(SECTION, SemanticTools(), save_state=save, complete=complete)
+    assert result["state"]["invalid_tool_requests"] == 1
+
+@pytest.mark.asyncio
+async def test_retryable_outage_resumes_saved_assessment_and_tool_history(monkeypatch):
+    snapshots = []
+    async def save(state): snapshots.append(state)
+    async def no_delay(_): pass
+    monkeypatch.setattr(reviewer.asyncio, 'sleep', no_delay)
+    responses = [call('read_source', {'path': 'app.py', 'start_line': 1, 'end_line': 1}, 'read'), call('record_assessment', assessment(), 'assessment')]
+    async def outage(messages, tools, **kwargs):
+        if responses: return responses.pop(0), {}
+        raise reviewer.provider.ProviderError('provider_unavailable', status_code=503)
+    paused = await reviewer.review_section(SECTION, Tools(), save_state=save, complete=outage)
+    assert paused['status'] == 'paused' and paused['assessments'] == [assessment()]
+    assert paused['state']['provider_failure'] == {'reason': 'provider_unavailable', 'status_code': 503}
+    history = paused['state']['messages']
+    assert any(m.get('tool_call_id') == 'read' for m in history)
+    assert any(m.get('tool_call_id') == 'assessment' for m in history)
+    assert snapshots[-1]['assessments'] == [assessment()]
+    async def resume(messages, tools, **kwargs):
+        assert messages[:len(history)] == history
+        return call('finish_review', {'reason': 'all_claims_reviewed'}), {}
+    completed = await reviewer.review_section(SECTION, Tools(), state=paused['state'], save_state=save, complete=resume)
+    assert completed['status'] == 'completed' and completed['assessments'] == [assessment()]
+
+@pytest.mark.asyncio
+async def test_permanent_provider_denial_is_terminal_with_diagnostic():
+    async def save(state): pass
+    async def denied(messages, tools, **kwargs):
+        raise reviewer.provider.ProviderError('model_access_denied', status_code=403, provider_code='tier_not_allowed')
+    result = await reviewer.review_section(SECTION, Tools(), save_state=save, complete=denied)
+    assert result['status'] == 'failed' and result['reason'] == 'model_access_denied'
+    assert result['state']['provider_failure'] == {'reason': 'model_access_denied', 'status_code': 403, 'provider_code': 'tier_not_allowed'}

@@ -37,10 +37,6 @@ async def chat(*, workflow: str, messages, tools=(), connection=None, slot=1,
                 exc.reason = "timeout"
                 exc.args = ("timeout",)
             exc.rate_limited = exc.reason == "rate_limited"
-            transient_status = exc.status_code is None or exc.status_code >= 500
-            exc.retryable = exc.reason == "rate_limited" or (
-                exc.reason == "provider_error" and transient_status
-            )
             if not exc.retryable or attempt + 1 >= attempts:
                 raise
             if exc.retry_after_seconds is not None:

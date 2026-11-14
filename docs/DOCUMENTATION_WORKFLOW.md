@@ -1,5 +1,7 @@
 # Documentation-first maintenance workflow
 
+> Evidence files referenced in the dated notes are historical Sentra artifacts and are not included in independent Weave.
+
 Current connection behavior (2026-11-13): planner, reviewer lanes and Markdown
 drafting can use separate server-managed model connections. Mistral remains the
 default. [Model connections](MODEL_CONNECTIONS.md) describes quotas, capability
@@ -114,7 +116,9 @@ for parallel reviewers. Evidence: `evidence/documentation_large4_validation.json
 The planner inventories existing indexed Markdown sections and assigns every
 section exactly once to one or two reviewer lanes. Each lane runs the existing
 LangGraph investigation loop. The plan, section progress and cumulative budgets
-survive continuation. Planner calls count toward the run budget. No independent
+survive continuation for API-based reviews. Planner calls count toward the API run
+budget. Antigravity native-agent reviews use separately bounded execution; these
+API call and token ceilings do not account for native sessions. No independent
 long-running planner agent is added beyond the two concurrent reviewers.
 
 `MISTRAL_API_KEY` and `MISTRAL_API_KEY2` represent the user's two separate
@@ -138,6 +142,8 @@ The model writes replacement prose, while deterministic validation restricts
 changes to unique original claim spans in existing `.md` files. Code and unrelated
 Markdown bytes remain unchanged. Repeated generation restores the existing draft.
 The interface displays the diff and requires approval tied to that draft's hash.
+Before first publication, changed review findings invalidate the draft; retries
+for an in-progress or published operation retain their recovery behavior.
 
 Open pull request is a separate, explicit action. GitHub publication validates
 base head and original blobs, creates a dedicated branch with one Markdown-only
@@ -226,7 +232,12 @@ Reviews may explicitly opt into a draft of saved findings while paused using
 `allow_partial: true`; the frontend warns that pending claims are not covered.
 This is not whole-document acceptance. New actionable findings invalidate cached
 draft reuse. The current limits are 64 model calls / 4 million byte reservation
-units per section and 200 calls / 16 million units per run. Account rate limits
+units per section and default to 200 calls / 16 million units per run. The
+server can set `SENTRA_DOCUMENTATION_MAX_RUN_CALLS` (1–100,000) and
+`SENTRA_DOCUMENTATION_MAX_RUN_TOKENS` (1–1,000,000,000) before a run.
+Changing either makes existing reviews incompatible; exhaustion stops the run
+with saved assessments retained. Token limits use conservative reservation units,
+not billed token counts. Account rate limits
 are unchanged; unsent local pauses do not consume physical call budgets.
 
 276 backend tests and 13 frontend contracts passed; frontend build passed.

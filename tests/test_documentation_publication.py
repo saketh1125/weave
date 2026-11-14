@@ -53,6 +53,31 @@ def test_draft_api_reuses_and_rejects_concurrent_and_unapproved(monkeypatch):
             assert client.get(url+'/latest').json()['id'] == draft['id']
             bad=client.post(f'/api/repos/{repo}/documentation/drafts/{draft["id"]}/publish', json={'draft_hash':'0'*64})
             assert bad.status_code == 409
+            from app.documentation import publisher
+            publications = []
+            async def publish(repo, draft, save_commit):
+                publications.append(draft.id)
+                return 'https://github.com/o/r/pull/1'
+            monkeypatch.setattr(publisher, 'publish', publish)
+            publish_url = f'/api/repos/{repo}/documentation/drafts/{draft["id"]}/publish'
+            approval = {'draft_hash': draft['draft_hash']}
+            changed = {**a, 'id': 'new-finding'}
+            with psycopg.connect(dburl) as db:
+                db.execute('UPDATE documentation_review_tasks SET assessments=%s WHERE id=%s', (psycopg.types.json.Jsonb([a, changed]), task))
+            assert client.post(publish_url, json=approval).status_code == 409
+            assert not publications
+            with psycopg.connect(dburl) as db:
+                db.execute('UPDATE documentation_review_tasks SET assessments=%s WHERE id=%s', (psycopg.types.json.Jsonb([a]), task))
+            assert client.post(publish_url, json=approval).json()['status'] == 'published'
+            assert len(publications) == 1
+            with psycopg.connect(dburl) as db:
+                db.execute('UPDATE documentation_review_tasks SET assessments=%s WHERE id=%s', (psycopg.types.json.Jsonb([a, changed]), task))
+            assert client.post(publish_url, json=approval).json()['status'] == 'published'
+            assert len(publications) == 1
+            with psycopg.connect(dburl) as db:
+                db.execute("UPDATE documentation_drafts SET status='publishing' WHERE id=%s", (uuid.UUID(draft['id']),))
+            assert client.post(publish_url, json=approval).json()['status'] == 'published'
+            assert len(publications) == 2
         finally:
             release.set()
             with psycopg.connect(dburl) as db: db.execute('DELETE FROM repositories WHERE id=%s', (repo,))
@@ -107,3 +132,34 @@ async def test_ambiguous_publication_recovers_without_duplicate(monkeypatch, los
     assert await publisher.publish(repo,draft,save) == 'https://github.com/o/r/pull/1'
     assert len([x for x in state['posts'] if x.endswith('/git/refs')]) == 1
     assert len([x for x in state['posts'] if x.endswith('/pulls')]) == 1
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('scenario', ['stale_base', 'changed_branch', 'changed_pull'])
+async def test_publication_rejects_changed_remote_heads(monkeypatch, scenario):
+    from types import SimpleNamespace
+    from app.documentation import publisher
+
+    calls = []
+    class Response:
+        def __init__(self, data, status=200): self.data, self.status_code = data, status
+        def json(self): return self.data
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def request(self, method, url, **kwargs):
+            calls.append((method, url))
+            if '/git/ref/heads/sentra' in url:
+                if scenario == 'stale_base': return Response({}, 404)
+                return Response({'object': {'sha': 'other' if scenario == 'changed_branch' else 'commit'}})
+            if url.endswith('/git/ref/heads/main'): return Response({'object': {'sha': 'advanced'}})
+            if url.endswith('/pulls'): return Response([{'head': {'sha': 'other'}, 'html_url': 'https://github.com/o/r/pull/1'}])
+            raise AssertionError((method, url))
+    monkeypatch.setattr(publisher.httpx, 'AsyncClient', Client)
+    monkeypatch.setattr(publisher.settings, 'sentra_gh_token', 'test')
+    repo = SimpleNamespace(remote_url='https://github.com/o/r', branch='main')
+    draft = SimpleNamespace(base_commit='base', branch='sentra/docs-x', publication_commit='commit', files=[])
+    async def save(): raise AssertionError('No commit should be saved')
+    with pytest.raises(publisher.PublicationError):
+        await publisher.publish(repo, draft, save)
+    assert all(method == 'GET' for method, _ in calls)

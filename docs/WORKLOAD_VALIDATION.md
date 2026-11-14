@@ -1,33 +1,11 @@
-# Synthetic ingestion workload baseline
+# Documentation workload validation
 
-> **Inherited Sentra record.** This document preserves earlier technical context,
-> not a fresh Weave acceptance result. Original experiment artifacts and personal
-> session records are excluded. See [Migration](MIGRATION.md) for current verification.
+Two provider-free PostgreSQL integration rehearsals live in `tests/test_documentation_scale.py`. They use a disposable database selected by `SENTRA_TEST_DATABASE_URL`.
 
-Run `python scripts/evaluate_workload.py` for the fixed small profile, or add
-`--profile medium` for the larger bounded profile. Both generate their corpus
-locally and print a JSON report. The optional `--root` points to an empty
-directory where the generated files should be kept for inspection.
+The three-section fixture exercises the actual reviewer tool conversation, persisted assignments, invocation pauses and resumes through a fake provider. Each claim is marked insufficient because no source evidence is supplied. It verifies recovery, not documentation quality.
 
-The profiles contain 120 or 800 active files across Python, JavaScript,
-TypeScript, and Markdown. The corpus is under 10 MB; each production bounded
-read is limited to 1 MB per file, the profile byte budget, and the profile file
-count. A chunk count ceiling of 20,000 is enforced. Stable generation uses
-seed `20261111`. The report includes a canonical logical corpus SHA-256,
-file/byte/chunk counts, parser failures, phase wall times, Linux peak RSS when
-available, and separately classified edit, rename, add, and delete path changes
-(including the complete set of removed paths). It also reports
-provider and embedding calls as zero.
+The 165-section fixture replaces both planner and reviewer with deterministic test functions. It verifies unique assignments, persisted claims, configured budget accounting (660 simulated calls under a 1,000-call ceiling), and that completed sections are not rerun. It does not establish real-provider throughput, investigation accuracy, or the number of calls an actual model requires.
 
-The benchmark calls Sentra's actual `_source_paths`, `_markdown_paths`,
-`read_checkout_files`, `Chunker.chunk_source`, and `chunk_markdown` code. Its
-incremental change summary compares the resulting path/content-hash inventory;
-it does not exercise database upserts or prove database deletion behavior.
-Git checkout, persistence, embedding, retrieval, and answer generation are
-outside this measurement. Treat timing and memory as synthetic index
-preparation measurements, not production capacity or retrieval-quality claims.
+Run after applying migrations: `pytest -q tests/test_documentation_scale.py`. Without the disposable database URL, these tests are skipped. The configured 1,000-call ceiling is a test setting; the application default remains 200.
 
-Run the focused offline checks with `pytest tests/test_workload_baseline.py`.
-They cover deterministic inventory, mixed-language parsing, exclusions,
-symlink handling on Linux, edit/rename/delete detection, and fail-closed file,
-total-byte, and file-count limits.
+The combined candidate passed 477 backend tests and 19 frontend contract tests on 2026-11-14, and its frontend production build passed. This includes these rehearsals, not a completed review of a real 165-section repository. Later changes require their own verification.

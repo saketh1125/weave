@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "project": "Weave",
+  "candidate_image": "sha256:2542661432de45178230de60f9bb3d5ec7d72ecb2678a874f4e0a307ffd46bb1",
+  "backend_tests": {
+    "passed": 487,
+    "database": "disposable PostgreSQL",
+    "warnings": 1
+  },
+  "frontend_checks": {
+    "passed": 23,
+    "scope": "contracts including source-level UI checks; no browser interaction test"
+  },
+  "frontend_build": "passed",
+  "mistral_synthetic_probe": {
+    "reason": "model_access_denied",
+    "provider_http_status": 403,
+    "provider_code": "tier_not_allowed",
+    "model": "mistral-large-4"
+  },
+  "antigravity_synthetic_probe": {
+    "status": "authentication_required",
+    "original_profile_copied": false
+  },
+  "real_repository_content_sent_in_connection_probes": false,
+  "scanner_advisories_open": 6,
+  "whole_repository_model_review_verified": false,
+  "new_github_publication_attempted": false,
+  "cloud_deployment_attempted": false
+}

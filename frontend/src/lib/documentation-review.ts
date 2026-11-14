@@ -117,3 +117,19 @@ export function reviewRetryRemaining(deadline: number | undefined, now: number):
   if (!Number.isSafeInteger(deadline) || deadline === undefined || deadline <= 0 || !Number.isSafeInteger(now) || now <= 0) return 0
   return Math.min(MAX_COOLDOWN_SECONDS, Math.max(0, Math.ceil((deadline - now) / 1000)))
 }
+
+export function reviewReasonMessage(reason: string): string {
+  switch (reason) {
+    case "model_access_denied": return "The configured model is not available to this account. Choose an accessible configured model or check the account's model entitlement, then start a new review."
+    case "provider_access_denied": return "The provider denied access. Check the account's entitlement or choose an accessible configured model, then start a new review."
+    case "invalid_credentials": return "The configured credentials were rejected. Check the connection credentials, then start a new review."
+    case "invalid_model": return "The configured model was not found or is invalid. Choose an accessible configured model, then start a new review."
+    case "provider_invalid_request": return "The provider rejected the review request. Check the model connection configuration before starting a new review."
+    case "provider_unavailable": return "The provider is temporarily unavailable. Continue the review when it is available."
+    case "timeout": return "The provider did not respond in time. Continue the review to retry."
+    case "provider_connection_failed": return "The provider connection failed. Check the connection and continue the review to retry."
+    case "run_budget_exhausted": return "The review reached its run limit before all sections were completed."
+    case "agent_timeout": return "The reviewer ran out of time while investigating this section. Continue the review to resume."
+    default: return reason.slice(0, 200)
+  }
+}

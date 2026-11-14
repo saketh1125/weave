@@ -21,13 +21,29 @@ import jsonschema
 
 WORKFLOWS = frozenset({'planner', 'reviewer', 'draft', 'qa', 'summary', 'drift', 'pr_summary', 'pr_qa'})
 
+SAFE_PROVIDER_CODES = frozenset({'tier_not_allowed', 'model_not_found', 'invalid_model', 'invalid_api_key', 'authentication_error', 'context_length_exceeded'})
+
 class ProviderError(Exception):
-    def __init__(self, reason, retry_after_seconds=None, *, request_sent=True, status_code=None):
+    def __init__(self, reason, retry_after_seconds=None, *, request_sent=True, status_code=None, provider_code=None):
         super().__init__(reason)
         self.reason = reason
         self.retry_after_seconds = retry_after_seconds
         self.request_sent = request_sent
         self.status_code = status_code
+        self.provider_code = provider_code if isinstance(provider_code, str) and provider_code in SAFE_PROVIDER_CODES else None
+
+    @property
+    def retryable(self):
+        return self.reason in {'rate_limited', 'timeout', 'provider_unavailable', 'provider_connection_failed'} or (
+            self.reason == 'provider_error' and (self.status_code is None or self.status_code >= 500))
+
+    def diagnostic(self):
+        result = {'reason': self.reason}
+        if type(self.status_code) is int and 100 <= self.status_code <= 599:
+            result['status_code'] = self.status_code
+        if self.provider_code:
+            result['provider_code'] = self.provider_code
+        return result
 
 @dataclass(frozen=True)
 class Connection:
@@ -172,6 +188,31 @@ def _check_credential_groups(connection, key):
         if origin == other_origin and other.quota_group != connection.quota_group and _credential(other) == key:
             _invalid()
 
+def _http_error(status, body):
+    # Keep only recognized machine codes; provider text can echo credentials or source.
+    try:
+        data = json.loads(body)
+        if isinstance(data, dict) and isinstance(data.get('error'), dict):
+            data = data['error']
+        code = next((data[k] for k in ('code', 'type') if data.get(k) in SAFE_PROVIDER_CODES), None) if isinstance(data, dict) else None
+    except (ValueError, TypeError):
+        code = None
+    code = code if isinstance(code, str) and code in SAFE_PROVIDER_CODES else None
+    if status == 401:
+        reason = 'invalid_credentials'
+    elif status == 403:
+        reason = 'model_access_denied' if code == 'tier_not_allowed' else 'provider_access_denied'
+    elif status == 404 and code in {'model_not_found', 'invalid_model'}:
+        reason = 'invalid_model'
+    elif status in (408, 504):
+        reason = 'timeout'
+    elif status >= 500:
+        reason = 'provider_unavailable'
+    else:
+        reason = 'provider_invalid_request'
+    return ProviderError(reason, status_code=status, provider_code=code)
+
+
 def _retry_after(value):
     if not value: return None
     try:
@@ -299,14 +340,18 @@ async def complete(messages, tools=(), *, connection=None, workflow='reviewer', 
                 async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False, transport=_transport(connection)) as client:
                     async with client.stream('POST', connection.endpoint.rstrip('/') + '/chat/completions', headers={'Authorization': f'Bearer {key}'}, json=payload) as response:
                         if response.status_code == 429: raise ProviderError('rate_limited', _retry_after(response.headers.get('Retry-After')), status_code=429)
-                        if response.status_code >= 300: raise ProviderError('provider_error', status_code=response.status_code)
                         body = bytearray()
+                        limit = 16000 if response.status_code >= 300 else 2_000_000
                         async for chunk in response.aiter_bytes():
                             body.extend(chunk)
-                            if len(body) > 2_000_000: raise ProviderError('provider_error')
+                            if len(body) > limit:
+                                if response.status_code >= 300:
+                                    body = body[:limit]
+                                    break
+                                raise ProviderError('invalid_response')
 
         if response.status_code == 429: raise ProviderError('rate_limited', _retry_after(response.headers.get('Retry-After')), status_code=429)
-        if response.status_code >= 300: raise ProviderError('provider_error', status_code=response.status_code)
+        if response.status_code >= 300: raise _http_error(response.status_code, body)
         data = json.loads(body)
         if not isinstance(data, dict) or data.get('error'): raise ProviderError('provider_error')
         choice = data['choices'][0]; message = choice['message']; usage = data.get('usage') or {}
@@ -343,4 +388,5 @@ async def complete(messages, tools=(), *, connection=None, workflow='reviewer', 
         return message, usage
     except ProviderError: raise
     except (TimeoutError, httpx.TimeoutException): raise ProviderError('timeout') from None
-    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError): raise ProviderError('provider_error') from None
+    except httpx.HTTPError: raise ProviderError('provider_connection_failed') from None
+    except (ValueError, KeyError, IndexError, TypeError): raise ProviderError('invalid_response') from None

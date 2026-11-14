@@ -1,10 +1,12 @@
 """Authenticated model settings; endpoints inherit the application auth middleware."""
+import json
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app import antigravity_bridge, model_connections
+from app import antigravity_bridge, model_connections, model_quota
 from app.db import SessionLocal
 from app.model_preferences import Preferences, load_preferences, use_preferences
 from app.models import ModelPreferences
@@ -110,3 +112,32 @@ async def test_antigravity():
             row.antigravity_identity = result.get("identity") if valid else None
             await session.commit()
     return {"status": result.get("status", "unavailable"), "message": result.get("message", "Local bridge unavailable.")}
+
+
+@router.post("/connections/{connection_id}/test")
+async def test_api_connection(connection_id: str):
+    registry, _ = _registry()
+    connection = registry.get(connection_id)
+    if connection is None:
+        raise HTTPException(404, "Unknown model connection")
+    tools = [{"type": "function", "function": {"name": "connection_probe", "description": "Confirm the connection.", "parameters": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}}}] if "tools" in connection.capabilities else []
+    messages = [{"role": "user", "content": "Call connection_probe with ok true." if tools else "Reply exactly OK."}]
+    try:
+        message, _ = await model_quota.request(messages, tools, connection=connection, model_name=connection.model, max_tokens=min(128, connection.max_output_tokens))
+        if tools:
+            calls = message["tool_calls"]
+            if len(calls) != 1 or calls[0]["function"]["name"] != "connection_probe":
+                raise ValueError()
+            args = calls[0]["function"]["arguments"]
+            args = json.loads(args) if isinstance(args, str) else args
+            if args != {"ok": True} or type(args.get("ok")) is not bool:
+                raise ValueError()
+        elif not isinstance(message.get("content"), str) or message["content"].strip() != "OK":
+            raise ValueError()
+    except model_connections.ProviderError as exc:
+        diagnostic = exc.diagnostic()
+        safe_reasons = {"model_access_denied", "provider_access_denied", "invalid_credentials", "invalid_model", "provider_invalid_request", "provider_unavailable", "provider_connection_failed", "provider_error", "rate_limited", "timeout", "missing_credentials", "invalid_configuration", "invalid_endpoint", "invalid_request", "invalid_response", "invalid_response_schema", "invalid_schema", "unsupported_capability", "connection_unavailable", "context_budget_exceeded", "output_budget_exceeded", "output_budget_exhausted", "quota_unavailable"}
+        return {"status": "failed", "reason": diagnostic.get("reason") if diagnostic.get("reason") in safe_reasons else "provider_error", "status_code": diagnostic.get("status_code"), "provider_code": diagnostic.get("provider_code") if diagnostic.get("provider_code") in model_connections.SAFE_PROVIDER_CODES else None}
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        return {"status": "failed", "reason": "invalid_response", "status_code": None, "provider_code": None}
+    return {"status": "passed", "reason": None, "status_code": None, "provider_code": None}

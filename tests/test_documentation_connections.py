@@ -15,14 +15,16 @@ def test_review_settings_detects_model_and_prompt_changes(monkeypatch):
     assert not model.compatible_review(run, model.review_settings())
 
 
-def test_legacy_review_only_accepts_default_connection(monkeypatch):
+def test_old_reviewer_checkpoints_are_incompatible_without_removing_assessments(monkeypatch):
     monkeypatch.delenv("SENTRA_MODEL_CONNECTIONS", raising=False)
     monkeypatch.delenv("SENTRA_MODEL_WORKFLOWS", raising=False)
-    monkeypatch.delenv("SENTRA_DOCUMENTATION_MODEL", raising=False)
-    run = SimpleNamespace(model="mistral-large-4", manifest={})
-    assert model.compatible_review(run, model.review_settings())
-    monkeypatch.setenv("SENTRA_MODEL_WORKFLOWS", "{}")
-    assert not model.compatible_review(run, model.review_settings())
+    current = model.review_settings()
+    assessment = {"claim": "previously saved"}
+    for settings in (None, {**current, "reviewer_version": 1}):
+        manifest = {} if settings is None else {"model_settings": settings}
+        run = SimpleNamespace(model=model.DEFAULT_MODEL, manifest=manifest, assessments=[assessment])
+        assert not model.compatible_review(run, current)
+        assert run.assessments == [assessment]
 
 
 def test_draft_generation_identity_changes_with_prompt(monkeypatch):
@@ -156,3 +158,27 @@ def test_draft_settings_are_bound_into_digest(monkeypatch):
     monkeypatch.setattr(drafts, "DRAFT_PROMPT", drafts.DRAFT_PROMPT + " changed")
     updated = [{"path": "README.md", "generation_settings": drafts.generation_settings()}]
     assert drafts.digest({"base_commit": "abc", "files": updated, "diff": "diff"}) != before
+
+
+def test_review_limits_are_bounded_and_bind_existing_runs(monkeypatch):
+    import pytest
+    monkeypatch.delenv("SENTRA_DOCUMENTATION_MAX_RUN_CALLS", raising=False)
+    monkeypatch.delenv("SENTRA_DOCUMENTATION_MAX_RUN_TOKENS", raising=False)
+    saved = model.review_settings()
+    assert saved["limits"] == {"calls": 200, "tokens": 16_000_000}
+    run = SimpleNamespace(model=model.DEFAULT_MODEL, manifest={"model_settings": saved})
+    legacy = SimpleNamespace(model=model.DEFAULT_MODEL, manifest={"model_settings": {k: v for k, v in saved.items() if k != "limits"}})
+    assert model.compatible_review(legacy, saved)
+    monkeypatch.setenv("SENTRA_DOCUMENTATION_MAX_RUN_CALLS", "500")
+    assert model.review_settings()["limits"]["calls"] == 500
+    assert not model.compatible_review(run, model.review_settings())
+    assert not model.compatible_review(legacy, model.review_settings())
+    for invalid in ("0", "100001", "-1", "bad"):
+        monkeypatch.setenv("SENTRA_DOCUMENTATION_MAX_RUN_CALLS", invalid)
+        with pytest.raises(model.ProviderError, match="invalid_configuration"):
+            model.review_limits()
+    monkeypatch.setenv("SENTRA_DOCUMENTATION_MAX_RUN_CALLS", "1")
+    for invalid in ("0", "1000000001", "bad"):
+        monkeypatch.setenv("SENTRA_DOCUMENTATION_MAX_RUN_TOKENS", invalid)
+        with pytest.raises(model.ProviderError, match="invalid_configuration"):
+            model.review_limits()

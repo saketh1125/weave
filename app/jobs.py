@@ -91,7 +91,7 @@ async def claim(session, lock_connection):
 async def heartbeat(job_id, token):
     async with SessionLocal() as session:
         result = await session.execute(update(Job).where(Job.id == job_id, Job.status == "running",
-                                      Job.lease_token == token).values(lease_expires_at=func.now() + LEASE, updated_at=func.now())
+                                      Job.lease_token == token, Job.lease_expires_at > func.now()).values(lease_expires_at=func.now() + LEASE, updated_at=func.now())
                                       .returning(Job.id))
         if result.scalar_one_or_none() is None:
             await session.rollback()
@@ -102,7 +102,7 @@ async def heartbeat(job_id, token):
 async def finish(job_id, token, error=None, result=None):
     async with SessionLocal() as session:
         job = (await session.execute(select(Job).where(Job.id == job_id, Job.status == "running",
-                 Job.lease_token == token).with_for_update())).scalar_one_or_none()
+                 Job.lease_token == token, Job.lease_expires_at > func.now()).with_for_update())).scalar_one_or_none()
         if not job:
             return
         job.updated_at = func.now()

@@ -57,7 +57,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
-      - name: Check documentation response contracts
-        run: node --test test/docs-response.test.ts test/documentation-review.test.ts test/documentation-draft.test.ts
+      - name: Run frontend contract tests
+        run: node --test test/*.test.ts
       - name: Build frontend
         run: npm run build

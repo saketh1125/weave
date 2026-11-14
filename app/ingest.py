@@ -126,7 +126,9 @@ async def ingest_repo(repo_id: uuid.UUID, remote_url: str) -> dict:
             root = target.resolve()
             markdown_paths = sorted(_markdown_paths(root))
             markdown_expected = {path.relative_to(root).as_posix() for path in markdown_paths}
-            candidates = chain(_source_paths(root), markdown_paths)
+            source_paths = list(_source_paths(root))
+            source_expected = {path.relative_to(root).as_posix() for path in source_paths}
+            candidates = chain(source_paths, markdown_paths)
             bounded = read_checkout_files(root, candidates,
                 max_file_bytes=settings.sentra_repo_max_file_bytes,
                 max_total_bytes=settings.sentra_repo_max_total_bytes,
@@ -151,6 +153,9 @@ async def ingest_repo(repo_id: uuid.UUID, remote_url: str) -> dict:
                 if path.suffix.lower() == ".md":
                     markdown_ingested.add(relative)
             _require_complete_markdown(markdown_expected, markdown_ingested)
+            missing_sources = sorted(source_expected - files.keys())
+            if missing_sources:
+                raise ValueError(f"source ingestion incomplete ({len(missing_sources)} omitted): {missing_sources[0]}")
             return files
 
         try:

@@ -10,7 +10,7 @@
 
 ## Finding and actual path
 
-`docs/evidence/dependency_audit.json` records `mcp==1.29.0` and `opentelemetry-api==1.37.0`, and marks them affected. The Semgrep 1.179.0 CLI metadata pins those exact dependency lines; Semgrep 1.185.0's upstream `cli/pyproject.toml` still pins `mcp==1.29.0` and `opentelemetry-api~=1.37.0`. The patched versions listed by the audit (MCP 1.30.0; OpenTelemetry API 1.45.1) therefore do not satisfy upstream's current constraints. Do not force these pins in isolation.
+The historical Sentra dependency audit recorded `mcp==1.29.0` and `opentelemetry-api==1.37.0` as affected; its artifact is not included in independent Weave. The Semgrep 1.179.0 CLI metadata pins those exact dependency lines; Semgrep 1.185.0's upstream `cli/pyproject.toml` still pins `mcp==1.29.0` and `opentelemetry-api~=1.37.0`. The patched versions listed by the audit (MCP 1.30.0; OpenTelemetry API 1.45.1) therefore do not satisfy upstream's current constraints. Do not force these pins in isolation.
 
 Sentra calls `semgrep scan` as a subprocess with `--config p/default`, `--metrics=off`, and a repository path. The worker uses the container's `/app` working directory; the repository is passed as a scan target. The fixed Registry config is explicit, so repository-local Semgrep config is not selected by this command. `p/default` is remote configuration and requires Semgrep Registry access; metrics-off does not make that ruleset local or offline. Semgrep documents `--metrics=off` as disabling metrics, while its CLI source configures metrics from the explicit option. Command-line options take precedence over the inherited `SEMGREP_SEND_METRICS` environment setting.
 
@@ -47,7 +47,26 @@ The scanner subprocess now runs with `cwd=REPO_ROOT` and a narrow environment al
 
 ## Evidence and limits
 
-- Local code and lock reviewed: `app/semgrep.py`, `app/worker.py`, `Dockerfile`, `docker-compose.yml`, `docker-compose.prod.yml`, `requirements-semgrep.lock`, and `docs/evidence/dependency_audit.json`.
+- Local code and lock reviewed: `app/semgrep.py`, `app/worker.py`, `Dockerfile`, `docker-compose.yml`, `docker-compose.prod.yml`, `requirements-semgrep.lock`, and the historical Sentra dependency audit artifact (not included in independent Weave).
 - Primary upstream sources: [Semgrep 1.179.0 dependency metadata](https://github.com/semgrep/semgrep/blob/v1.179.0/cli/pyproject.toml), [Semgrep 1.185.0 dependency metadata](https://github.com/semgrep/semgrep/blob/v1.185.0/cli/pyproject.toml), [Semgrep 1.179.0 scan command](https://github.com/semgrep/semgrep/blob/v1.179.0/cli/src/semgrep/commands/scan.py), [Semgrep metrics behavior](https://github.com/semgrep/semgrep/blob/develop/metrics.md), [MCP SDK security advisories](https://github.com/modelcontextprotocol/python-sdk/security/advisories), and [OpenTelemetry advisory GHSA-xcq7-p3pf-p88h](https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-xcq7-p3pf-p88h).
 - Docker Engine access was denied during the delegated source review, so that review used upstream tagged source and the checked-in lock/config. The primary agent's subsequent image inspection and synthetic runtime smoke are recorded above; no exploitability test was performed.
 - The dependency audit itself states that it is a package advisory lookup, not a base-image/OS audit, and that reachability was not established. This note adds source-based reachability reasoning but is not a dynamic exploitability test. Registry content/network trust, Semgrep parser vulnerabilities, OS packages, and later changes remain outside scope.
+
+
+## Weave dependency lookup — 2026-11-14
+
+A current OSV batch lookup checked all 150 pinned entries across
+`requirements.lock` and `requirements-semgrep.lock`. The runtime lock returned
+zero advisory matches. The scanner lock returned six moderate advisory matches:
+four for `mcp` 1.29.0 and two for `opentelemetry-api` 1.37.0. Five match the
+inherited record; the additional finding is
+[GHSA-mf5v-w3w3-f6cg](https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-mf5v-w3w3-f6cg),
+a trace-context parsing denial of service fixed in 1.45.2. Reachability in Weave
+has not been established. No dependency versions were changed during this sprint.
+
+This is a package-version advisory lookup, not a container/OS scan, exploit test,
+or production risk acceptance. Production promotion remains blocked pending
+compatible scanner dependency remediation or reviewed mitigation, image/OS audit,
+staging and restore exercises, access controls, and deployment/account decisions.
+
+A compatibility check on 2026-11-14 confirmed that the fixed versions `mcp` 1.30.0 and `opentelemetry-api` 1.45.2 do not satisfy the constraints in the latest published [Semgrep 1.185.0 tagged metadata](https://github.com/semgrep/semgrep/blob/v1.185.0/cli/pyproject.toml): `mcp==1.29.0` and `opentelemetry-api~=1.37.0`. A supported lock-only remediation is therefore blocked until upstream changes its constraints or provides a supported patched build. The six findings remain open.

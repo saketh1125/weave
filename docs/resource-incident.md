@@ -3,6 +3,7 @@
 > **Inherited Sentra record.** This document preserves earlier technical context,
 > not a fresh Weave acceptance result. Original experiment artifacts and personal
 > session records are excluded. See [Migration](MIGRATION.md) for current verification.
+> References below to evidence files describe historical Sentra artifacts; those files are not included in independent Weave.
 
 **Incident date:** 2026-10-02
 **Severity:** Session-terminating (the OpenCode development session was killed)

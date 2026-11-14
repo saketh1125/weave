@@ -374,3 +374,47 @@ def test_provider_switch_rejects_resume_and_worker_without_call(monkeypatch):
                 await session.commit()
             await engine.dispose()
     asyncio.run(run())
+
+
+def test_run_budget_stop_preserves_checkpoint(monkeypatch):
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    from app.documentation import model, reviewer, service
+    from app.models import Repository, Job, DocumentationReview, DocumentationReviewTask
+
+    async def run():
+        engine = create_async_engine(make_url(URL).set(drivername='postgresql+asyncpg'), poolclass=NullPool)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        monkeypatch.setattr(service, 'SessionLocal', sessions)
+        monkeypatch.setenv('SENTRA_DOCUMENTATION_MAX_RUN_CALLS', '1')
+        rid, jid, run_id, task_id = (uuid.uuid4() for _ in range(4))
+        async def review(section, tools, *, save_state, **kwargs):
+            await save_state({'calls': 1, 'tokens': 1, 'assessments': []})
+            await save_state({'calls': 2, 'tokens': 2, 'assessments': []})
+            raise AssertionError('budget must stop the request')
+        monkeypatch.setattr(reviewer, 'review_section', review)
+        try:
+            async with sessions() as session:
+                session.add(Repository(id=rid, name='budget-test', remote_url='https://example.invalid/repo', status='ready', commit_sha='abc'))
+                await session.flush()
+                session.add(Job(id=jid, repo_id=rid, kind='documentation_review', payload={'run_id': str(run_id)}, status='running', attempts=1, lease_token=uuid.uuid4(), lease_expires_at=datetime.now(timezone.utc)+timedelta(minutes=5)))
+                await session.flush()
+                session.add(DocumentationReview(id=run_id, repo_id=rid, job_id=jid, commit_sha='abc', status='queued', model=model.DEFAULT_MODEL, snapshot={}, manifest={'unreadable_files': [], 'model_settings': model.review_settings(), 'review_plan': {'version': 1, 'assignments': [[str(task_id)]]}}))
+                await session.flush()
+                session.add(DocumentationReviewTask(id=task_id, run_id=run_id, path='README.md', start_line=1, end_line=1, content='Claim', status='pending', state={}, assessments=[]))
+                await session.commit()
+                job = await session.get(Job, jid)
+            assert (await service.run_review(job))['status'] == 'failed'
+            async with sessions() as session:
+                run_row = await session.get(DocumentationReview, run_id)
+                task = await session.get(DocumentationReviewTask, task_id)
+                assert run_row.reason == 'run_budget_exhausted'
+                assert task.state['calls'] == 2
+        finally:
+            async with sessions() as session:
+                repo = await session.get(Repository, rid)
+                if repo: await session.delete(repo)
+                await session.commit()
+            await engine.dispose()
+    asyncio.run(run())

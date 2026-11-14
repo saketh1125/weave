@@ -261,6 +261,11 @@ async def publish_draft(repo_id: uuid.UUID, draft_id: uuid.UUID, approval: Draft
                 if not repo or repo.status != 'ready' or repo.commit_sha != d.base_commit:
                     raise HTTPException(409, 'Repository changed; create a new review')
                 if d.status not in ('draft', 'publishing'): raise HTTPException(409, 'Draft cannot be published')
+                if d.status == 'draft':
+                    _, tasks = await get_run(session, repo_id, d.review_id)
+                    signature = drafts.assessment_signature(tasks)
+                    if not d.files or any(f.get('assessment_snapshot') != signature for f in d.files):
+                        raise HTTPException(409, 'Review findings changed; create a new draft')
                 if not d.branch: d.branch = 'sentra/docs-' + str(d.id)
                 d.status = 'publishing'
                 await session.commit()

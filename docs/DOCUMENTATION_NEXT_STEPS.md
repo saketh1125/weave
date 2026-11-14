@@ -1,10 +1,23 @@
 # Documentation follow-up
 
+> Evidence files referenced in historical checkpoints are Sentra artifacts and are not included in independent Weave.
+
 Updated 2026-11-12. Historical checkpoints below are superseded by the current
 parallel maintenance implementation in [DOCUMENTATION_WORKFLOW.md](DOCUMENTATION_WORKFLOW.md).
 The first approved real PR and three selected-file spot checks are verified.
 Current remaining work: full-scope repository review quality and efficiency,
 long-context/load/outage behavior, and the existing security/cloud release gates.
+
+## Current Weave acceptance gates (2026-11-14)
+
+The detailed entries below are historical Sentra checkpoints, not current Weave model or deployment acceptance. Independent Weave retains the documentation-first reviewer, parallel API assignments, Markdown drafts and exact-approved publication.
+
+1. Resolve model availability: both configured Mistral Large 4 accounts currently return HTTP 403 `tier_not_allowed`. Large 4 stays selected. The independent local ACP bridge is reachable but its synthetic test returns `authentication_required`; no authenticated profile was copied from Sentra.
+2. Once a configured provider works, complete a bounded labeled review, compare actual claims/citations against the source, then run a representative whole-repository review. The 165-section rehearsal mocks model decisions and only verifies orchestration. Measure factuality, duplicate claims, completion, token/call use and recovery separately.
+3. Validate one new Weave draft and approved PR end to end after live review passes. Preserve Markdown-only edits, exact approval, base-commit guards, updated-finding checks and idempotent publication. Earlier Sentra PR checks are historical.
+4. Before deployment, resolve the open scanner advisory disposition, audit the container/OS, exercise Weave staging/backup restoration, and select cloud/account, private access, budget and region. API call/token ceilings do not measure native-agent token usage.
+
+See [Implementation status](IMPLEMENTATION_STATUS.md), [Workload validation](WORKLOAD_VALIDATION.md), and [Cloud release](CLOUD_RELEASE.md).
 
 ## Completed incident fix
 

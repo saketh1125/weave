@@ -3,7 +3,7 @@ import { api } from "@/lib/api"
 import { StatusBadge, ModelBadge, MetricTile } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { INVALID_DOCUMENTATION_REVIEW, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, type DocumentationReview } from "@/lib/documentation-review"
+import { INVALID_DOCUMENTATION_REVIEW, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview } from "@/lib/documentation-review"
 import { INVALID_DOCUMENTATION_DRAFT, parseDocumentationDraft, parseLatestDocumentationDraft, type DocumentationDraft } from "@/lib/documentation-draft"
 
 function citation(c: { file: string; start_line: number; end_line: number }) {
@@ -17,6 +17,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
   const [publicationBusy, setPublicationBusy] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [pollError, setPollError] = useState("")
   const [retryUntil, setRetryUntil] = useState<number>()
   const [now, setNow] = useState(() => Date.now())
   const generation = useRef(0)
@@ -35,13 +36,13 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       if (!mounted || generation.current !== token) return
       const restored = parseLatestDocumentationReview(value)
       setReview(restored)
-      if (restored?.status === "completed" || restored?.status === "paused") {
-        const savedDraft = parseLatestDocumentationDraft(await api.get<unknown>(`/repos/${encodeURIComponent(repoId)}/documentation/reviews/${encodeURIComponent(restored.run_id)}/drafts/latest`))
-        if (mounted && generation.current === token) replaceDraft(savedDraft)
-      }
       if (restored) {
         setRetryUntil(reviewRetryDeadline(Date.now(), restored.retry_after_seconds))
         setNow(Date.now())
+      }
+      if (restored?.status === "completed" || restored?.status === "paused") {
+        const savedDraft = parseLatestDocumentationDraft(await api.get<unknown>(`/repos/${encodeURIComponent(repoId)}/documentation/reviews/${encodeURIComponent(restored.run_id)}/drafts/latest`))
+        if (mounted && generation.current === token) replaceDraft(savedDraft)
       }
     }).catch(e => {
       if (mounted && generation.current === token) setError(e instanceof Error ? e.message : "Could not restore the latest review.")
@@ -60,11 +61,12 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
         if (generation.current === token) {
           const updated = parseDocumentationReview(value)
           setReview(updated)
+          setPollError("")
           setRetryUntil(reviewRetryDeadline(Date.now(), updated.retry_after_seconds))
           setNow(Date.now())
         }
       }).catch(e => {
-        if (generation.current === token) setError(e instanceof Error ? e.message : "Review status could not be refreshed.")
+        if (generation.current === token) setPollError(e instanceof Error ? e.message : "Review status could not be refreshed.")
       }).finally(() => { polling.current = false })
     }, 2000)
     return () => window.clearInterval(timer)
@@ -84,6 +86,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       const parsed = parseDocumentationReview(value)
       if (generation.current !== token) return
       setReview(parsed)
+      setPollError("")
       setRetryUntil(reviewRetryDeadline(Date.now(), parsed.retry_after_seconds))
       setNow(Date.now())
     } catch (e) {
@@ -125,6 +128,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
     <CardContent>
       <details className="mb-5 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Coverage and content sharing</summary><p className="mt-2 max-w-3xl leading-6">Coverage counts indexed files and reviewed sections, not every tracked file or factual claim. Starting a review sends selected documentation and code to the configured model connections. Check Settings before starting if you need to choose where that content is shared. The result identifies the review model.</p></details>
       {error && <p role="alert" className="notice notice-error mb-4">{error}</p>}
+      {pollError && <p role="alert" className="notice notice-error mb-4">{pollError}</p>}
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => void request(base, {})} disabled={busy || active}>{busy ? "Working…" : "Start review"}</Button>
         {review?.status === "paused" && <Button variant="outline" disabled={busy || retrySeconds > 0} onClick={() => void request(`${base}/${encodeURIComponent(review.run_id)}/resume`, {})}>Continue review</Button>}
@@ -132,7 +136,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       {retrySeconds > 0 && <p className="mt-2 text-sm" role="status">Continue is available in {retrySeconds} second{retrySeconds === 1 ? "" : "s"}.</p>}
       {review && <section aria-label="Documentation review results" className="mt-4">
         <div className="result-toolbar"><StatusBadge status={review.status} /><ModelBadge model={review.model} /><span className="text-sm">Commit: <code className="code-chip">{review.commit_sha || "Unavailable"}</code></span></div>
-        {review.reason && <div className={`notice mt-4 ${review.status === "failed" ? "notice-error" : "notice-warning"}`} role="status"><strong>{review.status === "failed" ? "Review stopped" : "Review paused"}</strong><p className="mt-1">{review.reason === "agent_timeout" ? "The reviewer ran out of time while investigating this section. Continue the review to resume." : <code>{review.reason}</code>}</p><p className="mt-1">Assessed claims are retained. Pending sections are not complete.</p></div>}
+        {review.reason && <div className={`notice mt-4 ${review.status === "failed" ? "notice-error" : "notice-warning"}`} role="status"><strong>{review.status === "failed" ? "Review stopped" : "Review paused"}</strong><p className="mt-1">{reviewReasonMessage(review.reason)}</p><p className="mt-1">{review.coverage.claims_assessed === 0 ? "No claims assessed yet." : "Assessed claims are retained."} Pending sections are not complete.</p></div>}
         {review.plan && <p className="mt-1 text-sm">Planner: assigned {review.plan.assignments.reduce((total, item) => total + item.task_ids.length, 0)} sections across {review.plan.reviewer_count} reviewer{review.plan.reviewer_count === 1 ? "" : "s"}.</p>}
         <div className="metric-grid mt-4"><MetricTile label="Indexed files" value={review.coverage.files_total} /><MetricTile label="Sections completed" value={`${review.coverage.sections_completed} / ${review.coverage.sections_total}`} /><MetricTile label="Claims assessed" value={review.coverage.claims_assessed} /><MetricTile label="Failed sections" value={<span className={review.coverage.sections_failed ? "text-red-600" : ""}>{review.coverage.sections_failed}</span>} hint={`${review.coverage.sections_pending} sections pending`} /></div>
         {review.activity && <div className="surface-inset mt-4" role="status">
@@ -177,6 +181,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
             {draft.review_id !== review.run_id && <p role="alert" className="text-sm text-red-600">This saved draft belongs to a different review and cannot be approved here.</p>}
             <div className="result-toolbar"><StatusBadge status={draft.status} /><span className="text-sm">Base commit: <code className="code-chip">{draft.base_commit}</code></span></div>
             <p className="text-sm">Changed files: {draft.files.map(file => file.path).join(", ")}</p>
+            <p className="text-sm">Compare each proposed replacement against its cited source before approval. Review the findings and citations above.</p>
             <details open className="rounded-xl border bg-card p-4"><summary className="cursor-pointer text-sm font-medium">Unified diff</summary><pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs">{draft.diff}</pre></details>
             <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer text-sm font-medium">Markdown draft preview</summary>{draft.files.map(file => <article key={file.path} className="mt-3"><h4 className="text-sm font-medium">{file.path}</h4><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-3 text-xs">{file.content}</pre></article>)}</details>
             {draft.status === "published" && draft.pr_url && <p role="status" className="text-sm">Pull request opened: <a className="underline" href={draft.pr_url} target="_blank" rel="noopener noreferrer">{draft.pr_url}</a></p>}

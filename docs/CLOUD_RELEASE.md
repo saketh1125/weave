@@ -30,8 +30,23 @@ digests.
 Python and Go bases are pinned to the digests recorded in the completed local
 build `e3m3dy1pp7rlkxgu8pahejlbq`. Updating these defaults requires a new tested
 build. The Python dependency lock came from the existing image. The revised
-Dockerfile has since built and passed isolated Linux verification; see
-`docs/evidence/clean_checkpoint.json` and `docs/evidence/operational_validation.json`.
+Dockerfile was reported to have built and passed isolated Linux verification in
+Sentra. The historical evidence artifacts are not included in independent Weave.
+
+
+## Candidate verification
+
+With the candidate image and PostgreSQL image already available, run from the
+repository root. A directory containing pytest 8.4.2, pytest-asyncio 1.4.0,
+and their compatible dependency wheels allows the test install to run offline:
+
+```powershell
+.\scripts\verify_candidate.ps1 -Image weave-candidate:phase4 -TestWheelsPath <wheel-directory>
+```
+
+Omit `-TestWheelsPath` to install those pinned test packages from the configured
+package index. The script uses a disposable database and tests the built image.
+This local verification does not satisfy the production gate below.
 
 ## Before provisioning
 
@@ -114,14 +129,14 @@ database migration. Verify readiness and a test repository after recovery.
 ## Production gate
 
 The local rehearsal on 2026-11-11 verified an isolated staging browser and a
-PostgreSQL dump/restore. See `docs/evidence/release_verification.json`. It did
-not exercise cloud TLS, encrypted scheduled backups, or application rollback.
+PostgreSQL dump/restore in Sentra. Its historical evidence artifact is not
+included in independent Weave. It did not exercise cloud TLS, encrypted scheduled backups, or application rollback.
 
 A later rehearsal also verified migration 002→005, restoration of the matching
 002 snapshot, and readiness/login/repository reads using the prior API image.
 Worker container crash/reclaim checks passed with an artificial lease expiry
-and test-only embed operation. See `docs/evidence/operational_validation.json`;
-these checks do not establish whole-cloud recovery or production capacity.
+and test-only embed operation in Sentra. The historical evidence artifact is not
+included in independent Weave; these checks do not establish whole-cloud recovery or production capacity.
 
 OSV source scans explicitly use `--no-call-analysis=all`; dependency discovery
 does not establish whether a vulnerable function is reachable. This keeps
@@ -137,6 +152,6 @@ runbook.
 The 2026-11-11 dependency audit also blocks promotion: the Semgrep environment
 contains affected `mcp` and `opentelemetry-api` packages, and the latest published
 Semgrep constraints do not permit the reported fixes. Retain this blocker until
-a compatible dependency update or mitigation is reviewed and tested. See
-`docs/evidence/dependency_audit.json`. Package advisory lookup is separate from
+a compatible dependency update or mitigation is reviewed and tested. The historical
+Sentra audit artifact is not included in independent Weave. Package advisory lookup is separate from
 the still-required base-image/OS audit and reachability review.

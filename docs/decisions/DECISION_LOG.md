@@ -19,8 +19,9 @@ the consequences. A decision is only marked **LOCKED** when evidence exists.
 `[DOC]` project documentation · `[EXT]` external, with link · `[MEAS]` measured
 by a Sentra spike · `[INF]` engineering inference · `[PENDING]` awaiting evidence
 
-**Evidence files** live in `docs/evidence/` and are produced by runnable code in
-`spikes/`. Every number in this log can be regenerated.
+**Historical evidence:** References to `docs/evidence/` describe Sentra artifacts
+not included in independent Weave. The historical figures have not been
+regenerated as part of the migration.
 
 ---
 
