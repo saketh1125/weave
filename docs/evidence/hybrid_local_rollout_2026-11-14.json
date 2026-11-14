@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-14",
+  "candidate_image": "sha256:296ffc2a8d93a6646551325dc56a57b0da06d3fd584b9ec3c3635f28a6cb323e",
+  "backend_tests_passed": 579,
+  "frontend_checks_passed": 31,
+  "frontend_build": "passed",
+  "api_readiness": "passed",
+  "native_synthetic_reverification": "passed",
+  "worker": "running",
+  "local_rollout_approved": true,
+  "database_migration_required": false,
+  "native_authentication_repeated": false,
+  "draft_synthetic_smoke": {
+    "passed": true,
+    "markdown_only": true,
+    "source_unchanged": true,
+    "requests": 1,
+    "prompt_tokens": 596,
+    "completion_tokens": 114,
+    "elapsed_seconds": 1.33
+  },
+  "synthetic_hybrid_evidence": "hybrid_synthetic_2026-11-14.json",
+  "mistral_model": "codestral-2508",
+  "sentra_demo_pr": "https://github.com/saketh1125/Sentra/pull/2",
+  "sentra_demo_pr_merged": false,
+  "whole_repository_completion_verified": false,
+  "browser_interaction_verified": false
+}

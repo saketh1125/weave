@@ -10,6 +10,27 @@ import httpx
 from app.model_connections import ProviderError
 
 
+def review_timeout_seconds():
+    value = os.environ.get("SENTRA_ANTIGRAVITY_REVIEW_TIMEOUT_SECONDS", "600")
+    if not value.isascii() or not value.isdecimal() or len(value) > 3 or not 60 <= int(value) <= 900:
+        raise ProviderError("invalid_agent_configuration", request_sent=False)
+    return int(value)
+
+
+def workflow_prompt_budget():
+    value = os.environ.get("SENTRA_NATIVE_MAX_PROMPT_CALLS", "18")
+    if not value.isascii() or not value.isdecimal() or len(value) > 3 or not 1 <= int(value) <= 100:
+        raise ProviderError("invalid_agent_configuration", request_sent=False)
+    return int(value)
+
+
+def static_triage_threshold():
+    value = os.environ.get("SENTRA_DOCUMENTATION_STATIC_TRIAGE_THRESHOLD", "20")
+    if not value.isascii() or not value.isdecimal() or len(value) > 5 or not 1 <= int(value) <= 10000:
+        raise ProviderError("invalid_agent_configuration", request_sent=False)
+    return int(value)
+
+
 def configuration():
     if os.environ.get("SENTRA_ANTIGRAVITY_ENABLED", "").lower() != "true":
         return None
@@ -49,14 +70,14 @@ def public_state(data):
         "verified": data.get("verified") is True and status == "passed" and selected in models}
 
 
-async def _json(client, method, url, **kwargs):
+async def _json(client, method, url, *, max_bytes=100_000, **kwargs):
     async with client.stream(method, url, **kwargs) as response:
         if response.status_code != 200:
             raise ProviderError("agent_bridge_unavailable", request_sent=False)
         raw = bytearray()
         async for chunk in response.aiter_bytes():
             raw.extend(chunk)
-            if len(raw) > 100_000:
+            if len(raw) > max_bytes:
                 raise ProviderError("invalid_agent_result")
     try:
         result = json.loads(raw)
@@ -97,9 +118,11 @@ async def _run(payload, on_progress=None):
             job_id = started.get("id")
             if not isinstance(job_id, str) or len(job_id) != 32 or any(c not in "0123456789abcdef" for c in job_id):
                 raise ProviderError("invalid_agent_result")
-            async with asyncio.timeout(400 if payload.get('kind') == 'review' else 160):
+            timeout = payload['deadline_seconds'] + (220 if payload.get('kind') == 'workflow' else 100) if payload.get('kind') in ('review', 'workflow') else 160
+            async with asyncio.timeout(timeout):
                 while True:
-                    result = await _json(client, "GET", url + "/jobs/" + job_id)
+                    result = await _json(client, "GET", url + "/jobs/" + job_id,
+                        max_bytes=11_000_000 if payload.get("kind") == "workflow" else 100_000)
                     if result.get("status") != "running":
                         return result
                     if on_progress is not None and result.get('progress') is not None and result['progress'] != last_progress:
@@ -134,4 +157,24 @@ async def review(snapshot, section, model, expected_identity=None, on_progress=N
     if len(json.dumps(job).encode()) > 50 * 1024 * 1024:
         raise ProviderError("agent_snapshot_too_large", request_sent=False)
     return await _run({"kind": "review", "model": model, "identity": expected_identity, "job": job,
+        "deadline_seconds": review_timeout_seconds(),
         "context": {k: section[k] for k in ("heading_context", "source_coverage", "reviewed_claims") if k in section}}, on_progress)
+
+
+async def workflow(snapshot, documentation_files, model, expected_identity, *, plan=None,
+                   completed_files=(), reviewed_claims=None, static_review=None, max_prompt_calls=None, completed_triage_ids=(), on_progress=None):
+    state = await status()
+    if not expected_identity or state.get("identity") != expected_identity:
+        raise ProviderError("agent_configuration_changed", request_sent=False)
+    if not state.get("verified") or model not in state.get("models", []):
+        raise ProviderError("agent_connection_unverified", request_sent=False)
+    job = {"snapshot": snapshot, "documentation_files": sorted(documentation_files),
+           "plan": plan, "completed_files": list(completed_files), "reviewed_claims": reviewed_claims or {}, "static_review": static_review, "completed_triage_ids": list(completed_triage_ids)}
+    payload = {"kind": "workflow", "model": model, "identity": expected_identity, **job,
+               "deadline_seconds": review_timeout_seconds(),
+               "max_prompt_calls": workflow_prompt_budget() if max_prompt_calls is None else max_prompt_calls}
+    if type(payload["max_prompt_calls"]) is not int or not 1 <= payload["max_prompt_calls"] <= 100:
+        raise ProviderError("invalid_agent_configuration", request_sent=False)
+    if len(json.dumps(payload, ensure_ascii=False).encode()) > 50 * 1024 * 1024:
+        raise ProviderError("agent_snapshot_too_large", request_sent=False)
+    return await _run(payload, on_progress)

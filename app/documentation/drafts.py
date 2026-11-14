@@ -31,6 +31,68 @@ def assessment_signature(tasks):
                          if a.get('verdict') == 'conflicting' and a.get('code_citations') and a.get('suggested_update')))
 
 
+
+def review_tasks(run, tasks):
+    """Add snapshot-validated static conflicts as draft candidates without changing tasks."""
+    from types import SimpleNamespace
+    from .hybrid import review_fingerprint
+
+    tasks = list(tasks)
+    report = run.manifest.get('static_review')
+    proxies = [SimpleNamespace(path=t.path, start_line=t.start_line, end_line=t.end_line,
+                               assessments=list(t.assessments)) for t in tasks]
+    if report is None:
+        return proxies
+    expected = review_fingerprint(run.snapshot, sorted(t.path for t in tasks), run.commit_sha,
+                                  run.manifest['model_settings'])
+    if not isinstance(report, dict) or report.get('fingerprint') != expected:
+        raise ValueError('Static review is stale')
+    by_path = {t.path: t for t in proxies}
+    existing = {(a.get('claim'), (a.get('doc') or {}).get('file'), (a.get('doc') or {}).get('start_line'),
+                 (a.get('doc') or {}).get('end_line'))
+                for t in proxies for a in t.assessments if a.get('verdict') == 'conflicting'}
+    grouped = {}
+    for item in report.get('items', []):
+        if not isinstance(item, dict) or item.get('status') != 'outdated':
+            continue
+        doc, code, claim = item.get('doc'), item.get('code'), item.get('claim')
+        if not isinstance(doc, dict) or not isinstance(code, dict) or not isinstance(claim, str) or not claim:
+            continue
+        def citation_valid(citation):
+            path, start, end = citation.get('file'), citation.get('start_line'), citation.get('end_line')
+            return (isinstance(path, str) and path in run.snapshot and type(start) is int and type(end) is int
+                    and 1 <= start <= end <= len(run.snapshot[path].splitlines()))
+        if not citation_valid(doc) or not citation_valid(code):
+            continue
+        path = doc['file']
+        task = by_path.get(path)
+        if (task is None or not path.lower().endswith('.md') or code['file'] == path
+                or code['file'].lower().endswith(('.md', '.markdown', '.mdx', '.rst'))
+                or not task.start_line <= doc['start_line'] <= doc['end_line'] <= task.end_line
+                or not isinstance(item.get('id'), str) or not item['id']
+                or not isinstance(item.get('message'), str) or not item['message'].strip()):
+            continue
+        excerpt = '\n'.join(run.snapshot[path].splitlines()[doc['start_line']-1:doc['end_line']])
+        if claim != excerpt:
+            continue
+        key = (claim, path, doc['start_line'], doc['end_line'])
+        if key in existing:
+            continue
+        grouped.setdefault(key, []).append(item)
+    for (claim, path, start, end), items in grouped.items():
+        ids = sorted(item['id'] for item in items)
+        citations = sorted({(i['code']['file'], i['code']['start_line'], i['code']['end_line']) for i in items})
+        messages = sorted({i['message'] for i in items})
+        by_path[path].assessments.append({
+            'id': digest({'static_item_ids': ids, 'citations': citations, 'messages': messages}),
+            'source': 'static', 'static_item_ids': ids, 'verdict': 'conflicting', 'claim': claim,
+            'doc': {'file': path, 'start_line': start, 'end_line': end},
+            'code_citations': [{'file': f, 'start_line': a, 'end_line': b} for f, a, b in citations],
+            'explanation': ' '.join(messages),
+            'suggested_update': 'Review the cited source and update this claim: ' + ' '.join(messages),
+        })
+    return proxies
+
 def make_draft(snapshot, tasks, edits):
     allowed = {}
     for task in tasks:

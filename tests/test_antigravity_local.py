@@ -135,7 +135,7 @@ def test_orchestrator_keeps_credentials_out_and_always_removes_container(monkeyp
     class FailingClient:
         def __init__(self, process, **kwargs):
             self.terminate = kwargs["terminate"]
-            assert kwargs['timeout'] == (300 if custom_job else 120)
+            assert kwargs['timeout'] == (600 if custom_job else 120)
         async def request(self, method, params): raise smoke.ACPError("remote request failed", code=-32603)
         async def close(self): await self.terminate()
     async def spawn(*args, **kwargs): return Process()
@@ -186,7 +186,7 @@ def test_timeout_exports_validated_partial_evidence_before_cleanup(monkeypatch, 
         def __init__(self, process, **kwargs): self.terminate = kwargs['terminate']
         async def close(self): await self.terminate()
     async def spawn(*args, **kwargs): return Process()
-    async def exercise(client, model, probe, section, progress):
+    async def exercise(client, model, probe, section, progress, result_callback):
         progress.update(model='a', models=['a'], operation='session_prompt')
         raise smoke.ACPError('transport deadline exceeded')
     async def read(*args): return payload
@@ -198,4 +198,39 @@ def test_timeout_exports_validated_partial_evidence_before_cleanup(monkeypatch, 
     result = asyncio.run(smoke.run(model='a', job=job, allow_source_upload=True))
     assert result['status'] == 'failed' and result['reason'] == 'transport deadline exceeded'
     assert result['review']['assessments'] == [claim] and result['review']['finished'] is False
-    assert result['execution']['deadline_seconds'] == 300
+    assert result['execution']['deadline_seconds'] == 600
+
+
+@pytest.mark.parametrize("statuses", [["incomplete", "passed"], ["incomplete"] * 3])
+def test_unfinished_review_continues_in_same_session_with_bounded_turns(statuses):
+    client = Client()
+    results = iter(statuses)
+    async def read_validated():
+        status = next(results)
+        return {"status": status, "review": {"finished": status == "passed"}}
+    result = asyncio.run(smoke.exercise(client, "a", False, result_callback=read_validated))
+    prompts = [params for method, params in client.calls if method == "session/prompt"]
+    assert len(prompts) == len(statuses)
+    assert all(prompt["sessionId"] == "opaque" for prompt in prompts)
+    assert "finish_review" in prompts[-1]["prompt"][0]["text"]
+    assert result["status"] == statuses[-1]
+
+
+def test_result_read_failure_does_not_retry_prompt():
+    client = Client()
+    async def read_invalid():
+        raise smoke.ACPError("invalid review result")
+    with pytest.raises(smoke.ACPError, match="invalid review result"):
+        asyncio.run(smoke.exercise(client, "a", False, result_callback=read_invalid))
+    assert sum(method == "session/prompt" for method, _ in client.calls) == 1
+
+
+@pytest.mark.parametrize('value', [True, 59, 901, '600'])
+def test_runner_rejects_invalid_review_deadline_before_start(value):
+    with pytest.raises(smoke.ACPError, match='deadline'):
+        asyncio.run(smoke.run(job='unused', allow_source_upload=True, review_timeout_seconds=value))
+
+
+def test_fixture_rejects_review_deadline():
+    with pytest.raises(smoke.ACPError, match='deadline'):
+        asyncio.run(smoke.run(review_timeout_seconds=600))

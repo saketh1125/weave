@@ -73,3 +73,41 @@ def test_draft_cache_provenance_tracks_actionable_assessments():
     assert files[0]['assessment_snapshot'] == signature
     task.assessments.append({**a, 'id': 'another-reviewed-claim'})
     assert assessment_signature([task]) != signature
+
+
+def test_static_outdated_draft_is_exact_and_does_not_mutate_tasks():
+    import copy
+    from app.documentation.drafts import review_tasks
+    from app.documentation.hybrid import review_fingerprint
+    snapshot = {'README.md': 'Old\nAligned\nUnknown\n', 'app.py': 'new = True\nother = True\n'}
+    settings = {'workflow': 'file_agents_v1'}
+    report = {'fingerprint': review_fingerprint(snapshot, ['README.md'], 'abc', settings), 'items': [
+        {'id': 'a', 'status': 'outdated', 'claim': 'Old', 'doc': {'file': 'README.md', 'start_line': 1, 'end_line': 1}, 'code': {'file': 'app.py', 'start_line': 1, 'end_line': 1}, 'message': 'Source differs.'},
+        {'id': 'b', 'status': 'outdated', 'claim': 'Old', 'doc': {'file': 'README.md', 'start_line': 1, 'end_line': 1}, 'code': {'file': 'app.py', 'start_line': 2, 'end_line': 2}, 'message': 'Another source.'},
+        {'id': 'c', 'status': 'aligned', 'claim': 'Aligned', 'doc': {'file': 'README.md', 'start_line': 2, 'end_line': 2}, 'code': {'file': 'app.py', 'start_line': 1, 'end_line': 1}, 'message': 'Aligned.'},
+        {'id': 'd', 'status': 'unverified', 'claim': 'Unknown', 'doc': {'file': 'README.md', 'start_line': 3, 'end_line': 3}, 'code': {'file': 'app.py', 'start_line': 1, 'end_line': 1}, 'message': 'Unknown.'}]}
+    run = SimpleNamespace(snapshot=snapshot, commit_sha='abc', manifest={'static_review': report, 'model_settings': settings})
+    task = SimpleNamespace(path='README.md', start_line=1, end_line=3, assessments=[])
+    before = copy.deepcopy(report)
+    tasks = review_tasks(run, [task])
+    assert task.assessments == [] and report == before
+    assert len(tasks[0].assessments) == 1
+    candidate = tasks[0].assessments[0]
+    assert candidate['source'] == 'static' and candidate['static_item_ids'] == ['a', 'b'] and len(candidate['code_citations']) == 2
+    files, _ = make_draft(snapshot, tasks, [{'assessment_id': candidate['id'], 'old': 'Old', 'new': 'New'}])
+    assert files[0]['content'] == 'New\nAligned\nUnknown\n'
+    run.snapshot = {**snapshot, 'app.py': 'changed\n'}
+    with pytest.raises(ValueError, match='stale'):
+        review_tasks(run, [task])
+
+
+def test_static_conflict_not_duplicated_when_ai_already_confirms():
+    from app.documentation.drafts import review_tasks
+    from app.documentation.hybrid import review_fingerprint
+    assessment = {'id': 'ai', 'verdict': 'conflicting', 'claim': 'Old', 'doc': {'file': 'README.md', 'start_line': 2, 'end_line': 2}, 'code_citations': [{'file': 'app.py', 'start_line': 1, 'end_line': 1}], 'suggested_update': 'Update.'}
+    task = SimpleNamespace(path='README.md', start_line=1, end_line=3, assessments=[assessment])
+    snapshot = {'README.md': '# title\nOld\nfooter\n', 'app.py': 'changed\n'}
+    settings = {}
+    item = {'id': 'static', 'status': 'outdated', 'claim': 'Old', 'doc': assessment['doc'], 'code': {'file': 'app.py', 'start_line': 1, 'end_line': 1}, 'message': 'Changed.'}
+    run = SimpleNamespace(snapshot=snapshot, commit_sha='abc', manifest={'model_settings': settings, 'static_review': {'fingerprint': review_fingerprint(snapshot, ['README.md'], 'abc', settings), 'items': [item]}})
+    assert review_tasks(run, [task])[0].assessments == [assessment]

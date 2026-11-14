@@ -12,7 +12,8 @@ from app.jobs import enqueue
 from app.models import Repository, DocumentationReview, DocumentationReviewTask
 from app.documentation.snapshot import capture
 from app.documentation.sections import sections
-from app.documentation import model as doc_model
+from app.documentation import model as doc_model, hybrid
+from app.documentation.native_result import digest
 from app import model_connections
 
 router = APIRouter(prefix='/repos', tags=['documentation'])
@@ -54,7 +55,7 @@ def render(run, tasks):
         activity = {'path': task.path, 'start_line': task.start_line, 'end_line': task.end_line,
             **{key: saved.get(key, 0) for key in ('steps', 'errors', 'claims_recorded', 'updated_at')},
             'phase': 'investigating' if run.status == 'running' else 'paused'}
-    return {'activity': activity, 'source_coverage': run.manifest.get('source_coverage'), 'plan': plan, 'run_id': str(run.id), 'job_id': str(run.job_id) if run.job_id else None,
+    response = {'activity': activity, 'source_coverage': run.manifest.get('source_coverage'), 'plan': plan, 'run_id': str(run.id), 'job_id': str(run.job_id) if run.job_id else None,
             'commit_sha': run.commit_sha, 'status': run.status, 'model': run.model,
             'coverage': {'files_total': len(run.manifest['documentation_files']), 'sections_total': len(tasks),
                          'sections_completed': completed, 'sections_pending': len(tasks)-completed-failed,
@@ -62,6 +63,38 @@ def render(run, tasks):
                          'scope': run.manifest['scope']},
             'assessments': [a for t in tasks for a in t.assessments], 'reason': run.reason,
             'retry_after_seconds': retry}
+    if run.manifest.get('model_settings', {}).get('workflow') == 'file_agents_v1':
+        native_plan = run.manifest.get('native_plan')
+        by_path = {task.path: task for task in tasks}
+        agents = []
+        for reviewer, paths in enumerate((native_plan or {}).get('assignments', []), 1):
+            agents.append({'reviewer': reviewer, 'files': [
+                {'path': path, 'status': by_path[path].status, 'claims_assessed': len(by_path[path].assessments)}
+                for path in paths]})
+        phase = ('static_checks' if not run.manifest.get('static_review') else 'planning' if native_plan is None else 'reviewing') if run.status in ('queued', 'running') else run.status
+        response['plan'] = None
+        response['activity'] = None
+        response['native_progress'] = {'phase': 'failed' if phase == 'stale' else phase,
+            'files_total': len(tasks), 'files_completed': completed, 'files_pending': len(tasks)-completed-failed,
+            'files_failed': failed, 'claims_assessed': sum(len(task.assessments) for task in tasks), 'agents': agents}
+    static = run.manifest.get('static_review')
+    response['static_review'] = static
+    response['merged_findings'] = hybrid.merge_findings(static['items'], response['assessments']) if static else None
+    if run.manifest.get('model_settings', {}).get('workflow') == 'file_agents_v1':
+        native_plan = run.manifest.get('native_plan') or {}
+        if native_plan.get('static_triage'):
+            total = (static or {}).get('counts', {}).get('unverified', 0)
+            response['native_progress']['triage'] = {
+                'reviewer': len(native_plan['assignments']) + 1,
+                'status': 'completed' if run.manifest.get('native_triage_finished') else 'running' if run.status == 'running' else 'failed' if run.status == 'failed' else 'pending',
+                'findings_total': total, 'findings_processed': len(run.manifest.get('completed_triage_ids', []))}
+        cost = run.manifest.get('native_cost')
+        if cost is not None:
+            saved = run.manifest['model_settings']
+            response['cost'] = {**cost, 'budget': {'max_prompt_calls': saved['max_prompt_calls'],
+                                                   'deadline_seconds': saved['deadline_seconds']},
+                                'incomplete': run.status != 'completed'}
+    return response
 
 async def get_run(session, repo_id, run_id):
     run = (await session.execute(select(DocumentationReview).where(DocumentationReview.repo_id == repo_id, DocumentationReview.id == run_id))).scalar_one_or_none()
@@ -85,17 +118,6 @@ async def create_review(repo_id: uuid.UUID, body: ReviewSelection | None = None)
             raise HTTPException(404, 'Repository not found')
         if not repo.commit_sha or repo.status != 'ready':
             raise HTTPException(409, 'Repository must have a ready indexed commit')
-        existing = (await session.execute(select(DocumentationReview).where(
-            DocumentationReview.repo_id == repo_id, DocumentationReview.commit_sha == repo.commit_sha,
-            DocumentationReview.model == review_model,
-            DocumentationReview.status.in_(('queued', 'running', 'paused', 'completed')),
-            DocumentationReview.manifest['workflow_version'].as_integer() == WORKFLOW_VERSION,
-            DocumentationReview.manifest['selection_key'].as_string() == selection_key,
-            DocumentationReview.manifest['model_settings'] == model_settings,
-        ).order_by(DocumentationReview.created_at.desc(), DocumentationReview.id.desc()).limit(1))).scalar_one_or_none()
-        if existing is not None:
-            run, tasks = await get_run(session, repo_id, existing.id)
-            return render(run, tasks)
         snapshot, manifest = await capture(session, repo_id)
         manifest['model_settings'] = model_settings
         manifest['workflow_version'] = WORKFLOW_VERSION
@@ -107,6 +129,20 @@ async def create_review(repo_id: uuid.UUID, body: ReviewSelection | None = None)
             manifest['documentation_files'] = sorted(paths)
             manifest['unreadable_files'] = [p for p in manifest['unreadable_files'] if not p.lower().endswith('.md') or p in paths]
             manifest['scope'] = 'Selected Markdown files only: ' + ', '.join(sorted(paths))
+        manifest['snapshot_signature'] = digest({'snapshot': snapshot, 'documentation_files': manifest['documentation_files'],
+                                                 'unreadable_files': manifest['unreadable_files'], 'source_coverage': manifest.get('source_coverage')})
+        existing = (await session.execute(select(DocumentationReview).where(
+            DocumentationReview.repo_id == repo_id, DocumentationReview.commit_sha == repo.commit_sha,
+            DocumentationReview.model == review_model,
+            DocumentationReview.manifest['snapshot_signature'].as_string() == manifest['snapshot_signature'],
+            DocumentationReview.status.in_(('queued', 'running', 'paused', 'completed')),
+            DocumentationReview.manifest['workflow_version'].as_integer() == WORKFLOW_VERSION,
+            DocumentationReview.manifest['selection_key'].as_string() == selection_key,
+            DocumentationReview.manifest['model_settings'] == model_settings,
+        ).order_by(DocumentationReview.created_at.desc(), DocumentationReview.id.desc()).limit(1))).scalar_one_or_none()
+        if existing is not None:
+            run, tasks = await get_run(session, repo_id, existing.id)
+            return render(run, tasks)
         manifest['section_context'] = {}
         run = DocumentationReview(id=uuid.uuid4(), repo_id=repo_id, commit_sha=repo.commit_sha, status='queued',
                                   model=review_model, snapshot=snapshot, manifest=manifest)
@@ -117,7 +153,9 @@ async def create_review(repo_id: uuid.UUID, body: ReviewSelection | None = None)
             if path not in snapshot:
                 continue
             try:
-                parts = list(sections(snapshot[path]))
+                parts = ([{'start_line': 1, 'end_line': max(1, len(snapshot[path].splitlines())),
+                           'content': snapshot[path], 'heading_context': []}]
+                         if model_settings.get('workflow') == 'file_agents_v1' else list(sections(snapshot[path])))
             except ValueError:
                 manifest['unreadable_files'] = sorted(set(manifest['unreadable_files'] + [path]))
                 continue
@@ -196,6 +234,10 @@ async def _create_draft(repo_id: uuid.UUID, run_id: uuid.UUID, *, allow_partial:
         eligible_status = run.status == 'completed' or (allow_partial and run.status == 'paused')
         if not repo or repo.status != 'ready' or repo.commit_sha != run.commit_sha or not eligible_status:
             raise HTTPException(409, 'A completed current review, or explicit allow_partial for a paused current review, is required')
+        try:
+            tasks = drafts.review_tasks(run, tasks)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
         await session.commit()  # Release the transaction before provider calls.
         existing = (await session.execute(select(DocumentationDraft).where(DocumentationDraft.repo_id == repo_id, DocumentationDraft.review_id == run_id).order_by(DocumentationDraft.created_at.desc()).limit(1))).scalar_one_or_none()
         identity = drafts.generation_settings()
@@ -262,7 +304,11 @@ async def publish_draft(repo_id: uuid.UUID, draft_id: uuid.UUID, approval: Draft
                     raise HTTPException(409, 'Repository changed; create a new review')
                 if d.status not in ('draft', 'publishing'): raise HTTPException(409, 'Draft cannot be published')
                 if d.status == 'draft':
-                    _, tasks = await get_run(session, repo_id, d.review_id)
+                    review, tasks = await get_run(session, repo_id, d.review_id)
+                    try:
+                        tasks = drafts.review_tasks(review, tasks)
+                    except ValueError as exc:
+                        raise HTTPException(409, str(exc)) from None
                     signature = drafts.assessment_signature(tasks)
                     if not d.files or any(f.get('assessment_snapshot') != signature for f in d.files):
                         raise HTTPException(409, 'Review findings changed; create a new draft')

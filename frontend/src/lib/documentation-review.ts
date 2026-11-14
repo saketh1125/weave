@@ -15,9 +15,43 @@ export type DocumentationSourceCoverage = {
   supplemented_paths: string[]
   missing_indexed_markdown: string[]
 }
+export type NativeReviewProgress = {
+  phase: "static_checks" | "planning" | "reviewing" | "paused" | "completed" | "failed"
+  files_total: number
+  files_completed: number
+  files_pending: number
+  files_failed: number
+  claims_assessed: number
+  agents: { reviewer: number; files: { path: string; status: "pending" | "running" | "completed" | "failed"; claims_assessed: number }[] }[]
+  triage: { reviewer: number; status: "pending" | "running" | "completed" | "failed"; findings_total: number; findings_processed: number } | null
+}
+export type StaticReview = {
+  version: 1
+  fingerprint: string
+  items: { id: string; status: "aligned" | "outdated" | "unverified"; claim_type: string; claim: string; message: string; doc: DocumentationCitation; code: DocumentationCitation | null; context?: Record<string, unknown> }[]
+  counts: { aligned: number; outdated: number; unverified: number }
+}
+export type DocumentationMergedFinding = {
+  claim: string
+  doc: DocumentationCitation
+  evidence: ({ origin: "static"; finding: StaticReview["items"][number] } | { origin: "ai"; finding: DocumentationAssessment })[]
+}
+export type NativeReviewCost = {
+  prompt_calls: number
+  model_calls: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  elapsed_seconds: number
+  budget: { max_prompt_calls: number; deadline_seconds: number }
+  incomplete: boolean
+}
 export type DocumentationReview = {
   activity: { path: string; start_line: number; end_line: number; steps: number; errors: number; claims_recorded: number; phase: "investigating" | "paused"; updated_at: number } | null
   plan: { reviewer_count: number; assignments: { reviewer: number; task_ids: string[] }[] } | null
+  native_progress: NativeReviewProgress | null
+  static_review: StaticReview | null
+  merged_findings: DocumentationMergedFinding[] | null
+  cost: NativeReviewCost | null
   run_id: string
   job_id: string | null
   commit_sha: string
@@ -61,11 +95,146 @@ function parseSourceCoverage(value: unknown): DocumentationSourceCoverage | null
   }
 }
 
+function parseNativeProgress(value: unknown): NativeReviewProgress | null {
+  if (value === undefined || value === null) return null
+  if (!object(value) || !["static_checks", "planning", "reviewing", "paused", "completed", "failed"].includes(String(value.phase)) ||
+    !["files_total", "files_completed", "files_pending", "files_failed", "claims_assessed"].every(key => nonnegativeInt(value[key])) ||
+    !Array.isArray(value.agents) || value.agents.length > 5) throw new Error(INVALID_REVIEW)
+  const files = new Set<string>()
+  let completed = 0, pending = 0, failed = 0, claims = 0
+  const agents = value.agents.map((agent, index) => {
+    if (!object(agent) || agent.reviewer !== index + 1 || !Array.isArray(agent.files) || agent.files.length > MAX_ITEMS) throw new Error(INVALID_REVIEW)
+    return { reviewer: agent.reviewer, files: agent.files.map(file => {
+      if (!object(file) || !text(file.path, 2000) || !file.path.trim() ||
+        !["pending", "running", "completed", "failed"].includes(String(file.status)) || !nonnegativeInt(file.claims_assessed) || files.has(file.path)) throw new Error(INVALID_REVIEW)
+      files.add(file.path)
+      if (file.status === "completed") completed++
+      else if (file.status === "failed") failed++
+      else pending++
+      claims += file.claims_assessed
+      return { path: file.path, status: file.status as NativeReviewProgress["agents"][number]["files"][number]["status"], claims_assessed: file.claims_assessed }
+    }) }
+  })
+  let triage: NativeReviewProgress["triage"] = null
+  if (value.triage !== undefined && value.triage !== null) {
+    const item = value.triage
+    if (!object(item) || !nonnegativeInt(item.reviewer) || item.reviewer < 1 || item.reviewer > 5 ||
+      !["pending", "running", "completed", "failed"].includes(String(item.status)) ||
+      !nonnegativeInt(item.findings_total) || !nonnegativeInt(item.findings_processed) || item.findings_processed > item.findings_total ||
+      agents.length >= 5 || agents.some(agent => agent.reviewer === item.reviewer)) throw new Error(INVALID_REVIEW)
+    triage = { reviewer: item.reviewer, status: item.status as NonNullable<NativeReviewProgress["triage"]>["status"],
+      findings_total: item.findings_total, findings_processed: item.findings_processed }
+  }
+  const unassigned = agents.length === 0
+  const emptyPhase = value.phase === "static_checks" || value.phase === "planning" || value.phase === "paused" || value.phase === "failed" || (value.phase === "completed" && value.files_total === 0)
+  if (unassigned
+    ? !emptyPhase || triage !== null || value.files_completed !== 0 || value.files_failed !== 0 || value.files_pending !== value.files_total || value.claims_assessed !== 0
+    : value.files_completed !== completed || value.files_pending !== pending || value.files_failed !== failed || value.files_total !== files.size || value.claims_assessed !== claims) throw new Error(INVALID_REVIEW)
+  return { phase: value.phase as NativeReviewProgress["phase"], files_total: value.files_total as number, files_completed: value.files_completed as number,
+    files_pending: value.files_pending as number, files_failed: value.files_failed as number, claims_assessed: value.claims_assessed as number, agents, triage }
+}
+
+function parseAssessment(value: unknown): DocumentationAssessment {
+  if (!object(value) || !text(value.id, 500) || !value.id || !["conflicting", "supported", "insufficient"].includes(String(value.verdict)) ||
+    !text(value.claim) || !text(value.explanation) || !(value.suggested_update === null || text(value.suggested_update)) ||
+    !Array.isArray(value.code_citations) || value.code_citations.length > MAX_ITEMS) throw new Error(INVALID_REVIEW)
+  return { id: value.id, verdict: value.verdict as DocumentationAssessment["verdict"], claim: value.claim, explanation: value.explanation,
+    suggested_update: value.suggested_update as string | null, doc: parseCitation(value.doc), code_citations: value.code_citations.map(parseCitation) }
+}
+
+function parseStaticReviewItem(value: unknown): StaticReview["items"][number] {
+  if (!object(value) || !text(value.id, 64) || !/^[0-9a-f]{64}$/i.test(value.id) ||
+    !["aligned", "outdated", "unverified"].includes(String(value.status)) || !text(value.claim_type, 200) || !text(value.claim) || !text(value.message) ||
+    !(value.code === null || object(value.code)) || (value.context !== undefined && !object(value.context))) throw new Error(INVALID_REVIEW)
+  return { id: value.id, status: value.status as StaticReview["items"][number]["status"], claim_type: value.claim_type,
+    claim: value.claim, message: value.message, doc: parseCitation(value.doc), code: value.code === null ? null : parseCitation(value.code),
+    ...(value.context === undefined ? {} : { context: value.context }) }
+}
+
+function parseStaticReview(value: unknown): StaticReview | null {
+  if (value === undefined || value === null) return null
+  if (!object(value)) throw new Error(INVALID_REVIEW)
+  const countsValue = value.counts
+  if (value.version !== 1 || !text(value.fingerprint, 64) || !/^[0-9a-f]{64}$/i.test(value.fingerprint) ||
+    !Array.isArray(value.items) || value.items.length > MAX_ITEMS || !object(countsValue)) throw new Error(INVALID_REVIEW)
+  if (!["aligned", "outdated", "unverified"].every(key => nonnegativeInt(countsValue[key]))) throw new Error(INVALID_REVIEW)
+  const ids = new Set<string>()
+  let aligned = 0, outdated = 0, unverified = 0
+  const items = value.items.map(item => {
+    const parsed = parseStaticReviewItem(item)
+    if (ids.has(parsed.id)) throw new Error(INVALID_REVIEW)
+    ids.add(parsed.id)
+    if (parsed.status === "aligned") aligned++
+    else if (parsed.status === "outdated") outdated++
+    else unverified++
+    return parsed
+  })
+  const counts = countsValue as Record<string, unknown>
+  if (counts.aligned !== aligned || counts.outdated !== outdated || counts.unverified !== unverified) throw new Error(INVALID_REVIEW)
+  return { version: 1, fingerprint: value.fingerprint, items,
+    counts: { aligned, outdated, unverified } }
+}
+
+function parseMergedFindings(value: unknown, staticReview: StaticReview | null, assessments: DocumentationAssessment[]): DocumentationMergedFinding[] | null {
+  if (value === undefined || value === null) return null
+  if (!Array.isArray(value) || value.length > MAX_ITEMS) throw new Error(INVALID_REVIEW)
+  const staticById = new Map((staticReview?.items ?? []).map(item => [item.id, item]))
+  const aiById = new Map(assessments.map(item => [item.id, item]))
+  if (aiById.size !== assessments.length) throw new Error(INVALID_REVIEW)
+  const seen = new Set<string>(), groups = new Set<string>()
+  const normalizeClaim = (claim: string) => claim.trim().split(/\s+/).join(" ")
+  const sameCitation = (left: DocumentationCitation, right: DocumentationCitation) =>
+    left.file === right.file && left.start_line === right.start_line && left.end_line === right.end_line
+  const result = value.map(group => {
+    if (!object(group) || !text(group.claim) || !Array.isArray(group.evidence) || group.evidence.length === 0 || group.evidence.length > MAX_ITEMS) throw new Error(INVALID_REVIEW)
+    const groupClaim = group.claim as string
+    const doc = parseCitation(group.doc)
+    const key = JSON.stringify([normalizeClaim(groupClaim), doc.file, doc.start_line, doc.end_line])
+    if (groups.has(key)) throw new Error(INVALID_REVIEW)
+    groups.add(key)
+    const evidence = group.evidence.map(entry => {
+      if (!object(entry) || (entry.origin !== "static" && entry.origin !== "ai")) throw new Error(INVALID_REVIEW)
+      if (entry.origin === "static") {
+        const parsed = parseStaticReviewItem(entry.finding)
+        const known = staticById.get(parsed.id)
+        const evidenceKey = `static:${parsed.id}`
+        if (!known || seen.has(evidenceKey) || normalizeClaim(groupClaim) !== normalizeClaim(parsed.claim) || !sameCitation(doc, parsed.doc)) throw new Error(INVALID_REVIEW)
+        seen.add(evidenceKey)
+        return { origin: "static" as const, finding: known }
+      }
+      const parsed = parseAssessment(entry.finding)
+      const known = aiById.get(parsed.id)
+      const evidenceKey = `ai:${parsed.id}`
+      if (!known || seen.has(evidenceKey) || normalizeClaim(groupClaim) !== normalizeClaim(parsed.claim) || !sameCitation(doc, parsed.doc)) throw new Error(INVALID_REVIEW)
+      seen.add(evidenceKey)
+      return { origin: "ai" as const, finding: known }
+    })
+    return { claim: groupClaim, doc, evidence }
+  })
+  if (seen.size !== staticById.size + aiById.size) throw new Error(INVALID_REVIEW)
+  return result
+}
+
+function parseNativeReviewCost(value: unknown): NativeReviewCost | null {
+  if (value === undefined || value === null) return null
+  const finiteNonnegative = (item: unknown): item is number => typeof item === "number" && Number.isFinite(item) && item >= 0
+  const optionalCount = (item: unknown): item is number | null => item === null || nonnegativeInt(item)
+  if (!object(value) || !nonnegativeInt(value.prompt_calls) || !optionalCount(value.model_calls) || !optionalCount(value.input_tokens) ||
+    !optionalCount(value.output_tokens) || !finiteNonnegative(value.elapsed_seconds) || typeof value.incomplete !== "boolean" || !object(value.budget) ||
+    !nonnegativeInt(value.budget.max_prompt_calls) || !finiteNonnegative(value.budget.deadline_seconds)) throw new Error(INVALID_REVIEW)
+  return { prompt_calls: value.prompt_calls, model_calls: value.model_calls, input_tokens: value.input_tokens, output_tokens: value.output_tokens,
+    elapsed_seconds: value.elapsed_seconds, budget: { max_prompt_calls: value.budget.max_prompt_calls, deadline_seconds: value.budget.deadline_seconds }, incomplete: value.incomplete }
+}
+
 /** Validate API and persisted review data before rendering it. */
 export function parseDocumentationReview(value: unknown): DocumentationReview {
   const coverageValue = object(value) ? value.coverage : undefined
   const sourceCoverageValue = object(value) ? value.source_coverage : undefined
   const planValue = object(value) ? value.plan : undefined
+  const nativeProgressValue = object(value) ? value.native_progress : undefined
+  const staticReviewValue = object(value) ? value.static_review : undefined
+  const mergedFindingsValue = object(value) ? value.merged_findings : undefined
+  const costValue = object(value) ? value.cost : undefined
   const activityValue = object(value) ? value.activity : undefined
   if (!object(value) || !text(value.run_id, 500) || !value.run_id || !(value.job_id === null || (text(value.job_id, 500) && value.job_id.length > 0)) ||
     !text(value.commit_sha, 200) || !text(value.model, 200) ||
@@ -85,18 +254,17 @@ export function parseDocumentationReview(value: unknown): DocumentationReview {
     !coverageValue.unreadable_files.every(path => text(path, 2000)) || !text(coverageValue.scope, 5000) ||
     !Array.isArray(value.assessments) || value.assessments.length > MAX_ITEMS || !(value.reason === null || text(value.reason, 5000)) ||
     (value.retry_after_seconds !== undefined && value.retry_after_seconds !== null && !nonnegativeInt(value.retry_after_seconds))) throw new Error(INVALID_REVIEW)
-  const assessments = value.assessments.map(item => {
-    if (!object(item) || !text(item.id, 500) || !item.id || !["conflicting", "supported", "insufficient"].includes(String(item.verdict)) ||
-      !text(item.claim) || !text(item.explanation) || !(item.suggested_update === null || text(item.suggested_update)) ||
-      !Array.isArray(item.code_citations) || item.code_citations.length > MAX_ITEMS) throw new Error(INVALID_REVIEW)
-    return { id: item.id, verdict: item.verdict as DocumentationAssessment["verdict"], claim: item.claim, explanation: item.explanation,
-      suggested_update: item.suggested_update as string | null, doc: parseCitation(item.doc), code_citations: item.code_citations.map(parseCitation) }
-  })
+  const assessments = value.assessments.map(parseAssessment)
   const coverage = coverageValue as Record<string, unknown> & Record<string, number>
   if (coverage.sections_completed + coverage.sections_pending + coverage.sections_failed !== coverage.sections_total || coverage.claims_assessed !== assessments.length) throw new Error(INVALID_REVIEW)
   const plan = object(planValue) ? { reviewer_count: planValue.reviewer_count as number, assignments: (planValue.assignments as Record<string, unknown>[]).map(item => ({ reviewer: item.reviewer as number, task_ids: item.task_ids as string[] })) } : null
   const source_coverage = parseSourceCoverage(sourceCoverageValue)
-  return { plan, activity: (activityValue ?? null) as DocumentationReview["activity"], run_id: value.run_id, job_id: value.job_id as string | null, commit_sha: value.commit_sha, status: value.status as DocumentationReview["status"], model: value.model,
+  const native_progress = parseNativeProgress(nativeProgressValue)
+  const static_review = parseStaticReview(staticReviewValue)
+  const merged_findings = parseMergedFindings(mergedFindingsValue, static_review, assessments)
+  const cost = parseNativeReviewCost(costValue)
+  if (native_progress && (native_progress.claims_assessed !== assessments.length || native_progress.claims_assessed !== coverage.claims_assessed)) throw new Error(INVALID_REVIEW)
+  return { plan, native_progress, static_review, merged_findings, cost, activity: (activityValue ?? null) as DocumentationReview["activity"], run_id: value.run_id, job_id: value.job_id as string | null, commit_sha: value.commit_sha, status: value.status as DocumentationReview["status"], model: value.model,
     coverage: { files_total: coverage.files_total, sections_total: coverage.sections_total, sections_completed: coverage.sections_completed, sections_pending: coverage.sections_pending, sections_failed: coverage.sections_failed,
       claims_assessed: coverage.claims_assessed, unreadable_files: coverageValue.unreadable_files as string[], scope: coverageValue.scope as string },
     source_coverage, assessments, reason: value.reason as string | null, ...(value.retry_after_seconds == null ? {} : { retry_after_seconds: value.retry_after_seconds as number }) }
@@ -104,6 +272,12 @@ export function parseDocumentationReview(value: unknown): DocumentationReview {
 
 export function parseLatestDocumentationReview(value: unknown): DocumentationReview | null {
   return value === null ? null : parseDocumentationReview(value)
+}
+
+export function canCreateDocumentationDraft(review: DocumentationReview | null): boolean {
+  return !!review && (review.status === "completed" || review.status === "paused") &&
+    (review.assessments.some(item => item.verdict === "conflicting") ||
+      !!review.static_review?.items.some(item => item.status === "outdated" && item.code !== null))
 }
 
 export const INVALID_DOCUMENTATION_REVIEW = INVALID_REVIEW
@@ -129,7 +303,13 @@ export function reviewReasonMessage(reason: string): string {
     case "timeout": return "The provider did not respond in time. Continue the review to retry."
     case "provider_connection_failed": return "The provider connection failed. Check the connection and continue the review to retry."
     case "run_budget_exhausted": return "The review reached its run limit before all sections were completed."
-    case "agent_timeout": return "The reviewer ran out of time while investigating this section. Continue the review to resume."
+    case "agent_timeout": return "The native reviewer ran out of time while reviewing a Markdown file. Continue the review to resume."
+    case "agent_no_progress": return "Automatic continuation stopped because it produced no new validated claim assessment. Saved work is retained. Review the evidence and runtime before continuing manually."
+    case "agent_continuation_limit": return "The automatic review session limit was reached. Saved findings are retained."
+    case "agent_incomplete": return "The native reviewer stopped before finishing a Markdown file. Saved findings are retained. Review the evidence and runtime before continuing manually."
+    case "native_prompt_budget_exhausted": return "The native review reached its prompt-turn budget before all files were complete. Saved findings are retained."
+    case "agent_cleanup_failed": return "A native review agent could not be shut down cleanly, so the review stopped. Saved findings are retained. Check the agent runtime before continuing."
+    case "workflow_replaced": return "This review was stopped because the documentation review workflow changed. Start a new review to use the updated workflow."
     default: return reason.slice(0, 200)
   }
 }

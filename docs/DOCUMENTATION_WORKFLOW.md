@@ -2,17 +2,17 @@
 
 > Evidence files referenced in the dated notes are historical Sentra artifacts and are not included in independent Weave.
 
-Current connection behavior (2026-11-13): planner, reviewer lanes and Markdown
-drafting can use separate server-managed model connections. Mistral remains the
-default. [Model connections](MODEL_CONNECTIONS.md) describes quotas, capability
-limits and incompatible-session rejection; [CLI connections](CLI_AGENT_CONNECTIONS.md)
-describes the separate, currently disabled agent extension. The dated delivery
-notes below preserve implementation history.
+Current native workflow (2026-11-14): existing Markdown defines review scope. Static checks run first against the frozen documentation/code snapshot. Their instance-level results are saved with status, explanation and citations; an unverified result is a lead, not a confirmed error.
 
-The starting point is existing repository Markdown. The reviewer reads a
-documentation section, identifies its factual claims, and navigates code to
-verify them. Undocumented code is not a reason to generate new documentation.
-Existing documents define the scope; code supplies evidence for corrections.
+Selecting the local Antigravity reviewer runs one native planner that reads Markdown and static findings, then assigns whole files to one to five reviewers. The planner prefers one reviewer for small work and chooses disjoint groups when useful. A dedicated unresolved-static triage lane is optional above the configured queue threshold and counts within the same five-reviewer maximum. It does not replace broader architecture, workflow, process and product-behavior investigation.
+
+Resolved static instances can be reused by their file owner. Unverified instances remain eligible even when another instance of the same type was resolved. Exact matching claim/citation groups combine static and AI evidence without hiding their origins or treating an AI verdict as proof. Completed files, claim assessments, static reuse, plans, triage progress and known native prompt counts are checkpointed under the existing worker lease. Invalid citations, incomplete coverage and provider/budget stops remain visible.
+
+The native workflow uses one isolated ACP parent process/profile owner with separate concurrent sessions, not 165 independent section sessions. API-provider documentation review retains its bounded legacy section path; its independent model connections and existing Q&A/ingestion/PR-review behavior are preserved. Markdown-only drafts include cited outdated static instances or conflicting model assessments, retain exact-text scope and require exact-draft approval before guarded PR publication.
+
+Cost reporting distinguishes observed native prompt turns from provider-internal model calls and tokens. Unreported usage is null. `SENTRA_NATIVE_MAX_PROMPT_CALLS` (1–100, default 18) is cumulative across resumes; `SENTRA_ANTIGRAVITY_REVIEW_TIMEOUT_SECONDS` (60–900, default 600) bounds the parallel reviewer phase. The planner has a separate 120-second deadline. `SENTRA_DOCUMENTATION_STATIC_TRIAGE_THRESHOLD` defaults to 20 unresolved leads. Model, runtime, prompts, configuration, rules and snapshot bindings prevent incompatible cache/conversation reuse. No API key is returned to the browser.
+
+The dated sections below describe earlier Sentra delivery slices and must not be read as current Weave acceptance evidence. Code-unit summaries remain separate from Markdown updates.
 
 ## Delivery order
 
@@ -72,7 +72,7 @@ recovery; stale index rejection; persistence after browser reload; and unchanged
 existing feature tests. Live tests should use synthetic content first. Tests
 with mocks establish orchestration contracts, not real-model accuracy.
 
-## First slice checkpoint — 2026-11-12
+## First slice checkpoint â€” 2026-11-12
 
 The real LangGraph loop, API/worker persistence, non-overlapping section tasks,
 source reads and semantic discovery are implemented. State is fenced by lease
@@ -94,7 +94,7 @@ returned 429 and paused before any assessment; no automatic retry was made.
 The local API/worker use schema 006 after a verified backup/restore rehearsal.
 No draft/edit/publish capability is implemented in this slice.
 
-## Large 4 follow-up — 2026-11-12
+## Large 4 follow-up â€” 2026-11-12
 
 The user tested both models: Small 4 returned a zero requests/minute allowance,
 while Large 4 returned HTTP 200 with observed limits of 50 requests/minute and
@@ -111,7 +111,7 @@ content was sent to the provider. This validates one simple live tool loop,
 not representative accuracy. Shared throughput scheduling remains a prerequisite
 for parallel reviewers. Evidence: `evidence/documentation_large4_validation.json`.
 
-## Parallel review and publication checkpoint — 2026-11-12
+## Parallel review and publication checkpoint â€” 2026-11-12
 
 The planner inventories existing indexed Markdown sections and assigns every
 section exactly once to one or two reviewer lanes. Each lane runs the existing
@@ -175,7 +175,7 @@ localhost fallback. No migration ran on that attempt. Alembic now honors the
 environment setting; the subsequent migration and full regression suite passed.
 
 
-## Real-repository validation improvements — 2026-11-12
+## Real-repository validation improvements â€” 2026-11-12
 
 User-authorized repositories: Argus, PramanaGST and Civic-Link; selected Markdown
 and relevant source may be sent to Mistral. Markdown draft approval and PR
@@ -233,8 +233,8 @@ Reviews may explicitly opt into a draft of saved findings while paused using
 This is not whole-document acceptance. New actionable findings invalidate cached
 draft reuse. The current limits are 64 model calls / 4 million byte reservation
 units per section and default to 200 calls / 16 million units per run. The
-server can set `SENTRA_DOCUMENTATION_MAX_RUN_CALLS` (1–100,000) and
-`SENTRA_DOCUMENTATION_MAX_RUN_TOKENS` (1–1,000,000,000) before a run.
+server can set `SENTRA_DOCUMENTATION_MAX_RUN_CALLS` (1â€“100,000) and
+`SENTRA_DOCUMENTATION_MAX_RUN_TOKENS` (1â€“1,000,000,000) before a run.
 Changing either makes existing reviews incompatible; exhaustion stops the run
 with saved assessments retained. Token limits use conservative reservation units,
 not billed token counts. Account rate limits
@@ -270,3 +270,9 @@ inventory exposes all 64 tracked Markdown files, 56 Go files, 36 Dart files and
 curated build manifests, subject to the documented source limits. A local backup
 includes the publication identity. See
 `evidence/documentation_real_repositories.json` for exact results and limits.
+
+## Native workflow verification
+
+The labeled synthetic fixture in `tests/fixtures/documentation_hybrid_labeled.json` contains five known claims. Static checks resolved two and left one lead unverified; native reviewers reused both resolved results and investigated three remaining claims, including a workflow claim absent from static discovery. This one run covered all five expected claims with no false-confident labels or duplicate AI/static claims, using three native prompt calls in 183.214 seconds. Provider-internal model-call/token counts were unavailable. See `evidence/hybrid_synthetic_2026-11-14.json`.
+
+This is a small synthetic acceptance example, not a representative accuracy estimate or proof of whole-repository completion. Large static-triage queues and actual full repositories still require acceptance tests. The section-based selected-file experiment was stopped when the file-allocation architecture was clarified; its saved findings were retained.

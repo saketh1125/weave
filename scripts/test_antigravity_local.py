@@ -176,7 +176,7 @@ async def report_progress(compose, env, callback):
         await asyncio.sleep(5)
 
 
-async def exercise(client, model, probe, section=None, progress=None):
+async def exercise(client, model, probe, section=None, progress=None, result_callback=None):
     progress = progress if progress is not None else {}
     progress['operation'] = 'initialize'
     initialized = await client.request("initialize", {"protocolVersion": 1,
@@ -203,15 +203,28 @@ async def exercise(client, model, probe, section=None, progress=None):
                 isinstance(x, dict) and x.get("value") == "default" for x in option.get("options", [])):
             await client.request("session/set_config_option", {"sessionId": session["sessionId"], "configId": "mode", "value": "default"})
             break
-    progress['operation'] = 'session_prompt'
-    await client.request("session/prompt", {"sessionId": session["sessionId"], "prompt": [{"type": "text", "text": review_prompt(section or SECTION)}]})
-    return {"status": "response received", "model": selected, "models": offered}
+    report = {"status": "response received", "model": selected, "models": offered}
+    prompt = review_prompt(section or SECTION)
+    for _ in range(3):
+        progress['operation'] = 'session_prompt'
+        await client.request("session/prompt", {"sessionId": session["sessionId"], "prompt": [{"type": "text", "text": prompt}]})
+        if result_callback is None:
+            break
+        report.update(await result_callback())
+        if report["review"]["finished"]:
+            break
+        prompt = ("Continue reviewing the remaining claims in the assigned section using the same tools and limits. "
+                  "Preserve recorded assessments, and explicitly call finish_review when the review is complete.")
+    return report
 
 
-async def run(model=None, login=False, probe=False, job=None, allow_source_upload=False, job_context=None, on_progress=None):
+async def run(model=None, login=False, probe=False, job=None, allow_source_upload=False, job_context=None, on_progress=None, review_timeout_seconds=None):
     if job and not allow_source_upload:
         raise ACPError("custom snapshot requires explicit source-upload authorization")
-    deadline_seconds = 300 if job else 120
+    if review_timeout_seconds is not None and (not job or type(review_timeout_seconds) is not int
+            or not 60 <= review_timeout_seconds <= 900):
+        raise ACPError("invalid review deadline")
+    deadline_seconds = (review_timeout_seconds or 600) if job else 120
     root = ROOT / "work"
     root.mkdir(exist_ok=True)
     identity = uuid.uuid4().hex
@@ -252,7 +265,7 @@ async def run(model=None, login=False, probe=False, job=None, allow_source_uploa
             stage = "container"
             # The fixed supervisor bounds container lifetime even if the host dies.
             await command(compose + ["run", "--rm", "-d", "--no-deps", "--name", container,
-                "--entrypoint", "python", "runner", "-c", "import time; time.sleep(600)"], env)
+                "--entrypoint", "python", "runner", "-c", "import time; time.sleep(1200)"], env)
             if login:
                 stage = "native_interactive_setup"
                 await command(["docker", "exec", "-it", container, "/opt/agy/agy", "acp", "--login", "--disable-telemetry"],
@@ -267,6 +280,7 @@ async def run(model=None, login=False, probe=False, job=None, allow_source_uploa
                     process.kill()
                     await process.wait()
             collector = TextCollector()
+            deadline = asyncio.get_running_loop().time() + deadline_seconds
             client = ACPClient(process, terminate=terminate, timeout=deadline_seconds, notification=collector.receive,
                 max_roundtrips=80, allowed_tool_names=frozenset('mcp_sentra_' + name for name in
                     ('list_files', 'search_source', 'read_source', 'record_assessment', 'finish_review')))
@@ -280,11 +294,15 @@ async def run(model=None, login=False, probe=False, job=None, allow_source_uploa
                         'activity': {'steps': payload['steps'], 'errors': payload['errors'],
                                      'claims_recorded': len(payload['assessments'])}})
                 monitor = asyncio.create_task(report_progress(compose, env, checkpoint))
-            report = await exercise(client, model, probe, prompt_section, progress)
-            if not probe:
-                stage = "validate_evidence"
+            async def result_callback():
                 payload = await read_result(compose, env)
-                report.update(verified_result(payload, job_identity, section, synthetic=not job))
+                return verified_result(payload, job_identity, section, synthetic=not job)
+            try:
+                report = await asyncio.wait_for(exercise(client, model, probe, prompt_section, progress,
+                    result_callback if not probe else None), max(0, deadline - asyncio.get_running_loop().time()))
+            except asyncio.TimeoutError:
+                raise ACPError("transport deadline exceeded") from None
+            if not probe:
                 report["execution"] = execution_identity(report["model"], prompt_section, job_identity, deadline_seconds)
         except (ACPError, OSError, RuntimeError, ValueError, KeyError, TypeError, asyncio.TimeoutError) as exc:
             report = {"model": model, **progress, "status": "failed", "stage": stage}

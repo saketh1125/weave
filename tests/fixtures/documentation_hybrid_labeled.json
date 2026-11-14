@@ -1,0 +1,18 @@
+{
+  "snapshot": {
+    "a.md": "POST /upload returns 200.\nUploads are processed synchronously before returning.\n",
+    "b.md": "GET /health returns 200.\nGET /missing returns 200.\nBackups are encrypted using AES-256.\n",
+    "app.py": "from fastapi import FastAPI\napp = FastAPI()\nclass DeferredQueue:\n    def __init__(self): self.pending = []\n    def enqueue(self, item): self.pending.append(item)\nqueue = DeferredQueue()\ndef process(item): return item\ndef run_pending():\n    while queue.pending:\n        process(queue.pending.pop(0))\n@app.post('/upload', status_code=202)\ndef upload():\n    queue.enqueue('parse')\n    return {'queued': True}\n@app.get('/health')\ndef health():\n    return {'ok': True}\n"
+  },
+  "documentation_files": [
+    "a.md",
+    "b.md"
+  ],
+  "expected": {
+    "a.md:1": "static_outdated",
+    "a.md:2": "conflicting",
+    "b.md:1": "static_aligned",
+    "b.md:2": "insufficient",
+    "b.md:3": "insufficient"
+  }
+}

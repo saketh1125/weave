@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { INVALID_DOCUMENTATION_REVIEW, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage } from "../src/lib/documentation-review.ts"
+import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage } from "../src/lib/documentation-review.ts"
 
 const valid = {
   run_id: "run-1", job_id: "job-1", commit_sha: "abc123", status: "completed", model: "mistral-large", retry_after_seconds: null,
@@ -42,6 +42,98 @@ test("accepts bounded planner assignments and rejects inconsistent plans", () =>
   }
 })
 
+test("parses native planning and per-agent file progress", () => {
+  const planning = { phase: "planning", files_total: 3, files_completed: 0, files_pending: 3, files_failed: 0, claims_assessed: 0, agents: [] }
+  const plannedReview = { ...valid, coverage: { ...valid.coverage, files_total: 3, sections_total: 0, sections_completed: 0, sections_pending: 0, sections_failed: 0, claims_assessed: 0 }, assessments: [], native_progress: planning }
+  assert.deepEqual(parseDocumentationReview(plannedReview).native_progress, { ...planning, triage: null })
+  const staticChecks = { ...planning, phase: "static_checks" }
+  assert.equal(parseDocumentationReview({ ...plannedReview, status: "running", native_progress: staticChecks }).native_progress?.phase, "static_checks")
+  for (const phase of ["paused", "failed"]) {
+    const stopped = { ...planning, phase }
+    assert.deepEqual(parseDocumentationReview({ ...plannedReview, status: phase, native_progress: stopped }).native_progress, { ...stopped, triage: null })
+  }
+  const empty = { phase: "completed", files_total: 0, files_completed: 0, files_pending: 0, files_failed: 0, claims_assessed: 0, agents: [] }
+  assert.deepEqual(parseDocumentationReview({ ...plannedReview, status: "completed", native_progress: empty }).native_progress, { ...empty, triage: null })
+
+  const native_progress = { phase: "reviewing", files_total: 2, files_completed: 1, files_pending: 1, files_failed: 0, claims_assessed: 1,
+    agents: [{ reviewer: 1, files: [{ path: "README.md", status: "completed", claims_assessed: 1 }] },
+      { reviewer: 2, files: [{ path: "docs/guide.md", status: "running", claims_assessed: 0 }] }] }
+  assert.deepEqual(parseDocumentationReview({ ...valid, native_progress }).native_progress, { ...native_progress, triage: null })
+  assert.equal(parseDocumentationReview(valid).native_progress, null)
+})
+
+test("rejects incomplete or inconsistent native file allocations", () => {
+  const progress = { phase: "reviewing", files_total: 2, files_completed: 1, files_pending: 1, files_failed: 0, claims_assessed: 1,
+    agents: [{ reviewer: 1, files: [{ path: "README.md", status: "completed", claims_assessed: 1 }] },
+      { reviewer: 2, files: [{ path: "docs/guide.md", status: "running", claims_assessed: 0 }] }] }
+  const invalid = [
+    { ...progress, agents: [{ reviewer: 1, files: [{ path: "README.md", status: "completed", claims_assessed: 1 }] }] },
+    { ...progress, agents: [{ reviewer: 1, files: [progress.agents[0].files[0]] }, { reviewer: 2, files: [{ ...progress.agents[1].files[0], path: "README.md" }] }] },
+    { ...progress, files_pending: 0 },
+    { ...progress, agents: [{ reviewer: 1, files: [{ ...progress.agents[0].files[0], status: "other" }] }, progress.agents[1]] },
+    { ...progress, agents: [{ reviewer: 2, files: progress.agents[0].files }, progress.agents[1]] },
+  ]
+  for (const native_progress of invalid) assert.throws(() => parseDocumentationReview({ ...valid, native_progress }), { message: INVALID_DOCUMENTATION_REVIEW })
+})
+
+test("limits file reviewer agents and a separate triage owner to five total", () => {
+  const agents = [1, 2, 3, 4].map(reviewer => ({ reviewer, files: [{ path: `docs/${reviewer}.md`, status: "running", claims_assessed: 0 }] }))
+  const native_progress = { phase: "reviewing", files_total: 4, files_completed: 0, files_pending: 4, files_failed: 0, claims_assessed: 0,
+    agents, triage: { reviewer: 5, status: "running", findings_total: 3, findings_processed: 1 } }
+  const emptyClaims = { ...valid, assessments: [], coverage: { ...valid.coverage, sections_total: 0, sections_completed: 0, sections_pending: 0, sections_failed: 0, claims_assessed: 0 }, native_progress }
+  assert.equal(parseDocumentationReview(emptyClaims).native_progress?.triage?.findings_processed, 1)
+  assert.throws(() => parseDocumentationReview({ ...emptyClaims, native_progress: { ...native_progress, agents: [...agents, { reviewer: 5, files: [] }], triage: { ...native_progress.triage, reviewer: 6 } } }), { message: INVALID_DOCUMENTATION_REVIEW })
+  assert.throws(() => parseDocumentationReview({ ...emptyClaims, native_progress: { ...native_progress, triage: { ...native_progress.triage, findings_processed: 4 } } }), { message: INVALID_DOCUMENTATION_REVIEW })
+})
+
+test("parses static review leads and requires exact status counts", () => {
+  const static_review = { version: 1, fingerprint: "a".repeat(64), items: [
+    { id: "1".repeat(64), status: "aligned", claim_type: "feature", claim: "Does X", message: "Text matches source", doc: { file: "README.md", start_line: 1, end_line: 2 }, code: { file: "src/x.ts", start_line: 3, end_line: 4 }, context: { rule: "same-word" } },
+    { id: "2".repeat(64), status: "unverified", claim_type: "version", claim: "Uses version 2", message: "No matching version found", doc: { file: "README.md", start_line: 4, end_line: 4 }, code: null },
+  ], counts: { aligned: 1, outdated: 0, unverified: 1 } }
+  assert.deepEqual(parseDocumentationReview({ ...valid, static_review }).static_review, static_review)
+  assert.equal(parseDocumentationReview(valid).static_review, null)
+  for (const invalid of [
+    { ...static_review, version: 2 }, { ...static_review, fingerprint: "bad" },
+    { ...static_review, counts: { ...static_review.counts, unverified: 0 } },
+    { ...static_review, items: [static_review.items[0], { ...static_review.items[1], id: static_review.items[0].id }] },
+    { ...static_review, items: [{ ...static_review.items[0], status: "error" }, static_review.items[1]] },
+    { ...static_review, items: [{ ...static_review.items[0], code: "source snippet" }, static_review.items[1]] },
+  ]) assert.throws(() => parseDocumentationReview({ ...valid, static_review: invalid }), { message: INVALID_DOCUMENTATION_REVIEW })
+})
+
+test("merges exact claim and citation evidence while retaining distinct static matches", () => {
+  const first = { id: "1".repeat(64), status: "unverified", claim_type: "feature", claim: "Uses X", message: "Static match A", doc: valid.assessments[0].doc, code: { file: "src/a.py", start_line: 4, end_line: 5 } }
+  const second = { ...first, id: "2".repeat(64), status: "outdated", claim: "Uses   X", message: "Static match B", code: null }
+  const static_review = { version: 1, fingerprint: "a".repeat(64), items: [first, second], counts: { aligned: 0, outdated: 1, unverified: 1 } }
+  const merged_findings = [{ claim: "Uses X", doc: valid.assessments[0].doc,
+    evidence: [{ origin: "static", finding: first }, { origin: "static", finding: second }, { origin: "ai", finding: valid.assessments[0] }] }]
+  const parsed = parseDocumentationReview({ ...valid, static_review, merged_findings })
+  assert.equal(parsed.merged_findings?.length, 1)
+  assert.deepEqual(parsed.merged_findings?.[0].evidence.map(item => item.origin), ["static", "static", "ai"])
+  assert.deepEqual(parsed.merged_findings?.[0].evidence.filter(item => item.origin === "static").map(item => item.finding.id), [first.id, second.id])
+
+  const invalid = [
+    [{ ...merged_findings[0], evidence: [{ origin: "static", finding: { ...first, id: "9".repeat(64) } }, { origin: "static", finding: second }, { origin: "ai", finding: valid.assessments[0] }] }],
+    [{ ...merged_findings[0], claim: "Different claim" }],
+    [{ ...merged_findings[0], doc: { ...merged_findings[0].doc, start_line: 7 } }],
+  ]
+  for (const findings of invalid) assert.throws(() => parseDocumentationReview({ ...valid, static_review, merged_findings: findings }), { message: INVALID_DOCUMENTATION_REVIEW })
+})
+
+test("parses native usage and review coverage status without inferring unknown provider or token counts", () => {
+  const cost = { prompt_calls: 8, model_calls: null, input_tokens: null, output_tokens: 120, elapsed_seconds: 1.25,
+    budget: { max_prompt_calls: 12, deadline_seconds: 90 }, incomplete: true }
+  assert.deepEqual(parseDocumentationReview({ ...valid, cost }).cost, cost)
+  assert.equal(parseDocumentationReview({ ...valid, cost: { ...cost, incomplete: false } }).cost?.incomplete, false)
+  assert.equal(parseDocumentationReview(valid).cost, null)
+  for (const invalid of [
+    { ...cost, prompt_calls: -1 }, { ...cost, model_calls: "8" }, { ...cost, input_tokens: -1 },
+    { ...cost, elapsed_seconds: Infinity }, { ...cost, budget: { ...cost.budget, deadline_seconds: -1 } },
+    { ...cost, incomplete: "yes" },
+  ]) assert.throws(() => parseDocumentationReview({ ...valid, cost: invalid }), { message: INVALID_DOCUMENTATION_REVIEW })
+})
+
 test("validates optional investigation activity", () => {
   const activity = { path: "docs/guide.md", start_line: 2, end_line: 10, steps: 4, errors: 1, claims_recorded: 2, phase: "paused", updated_at: 1_700_000_000.5 }
   assert.deepEqual(parseDocumentationReview({ ...valid, activity }).activity, activity)
@@ -61,6 +153,17 @@ test("accepts a latest lookup with no saved review outside the parser", () => {
   assert.equal(parseLatestDocumentationReview(null), null)
   assert.throws(() => parseDocumentationReview(null), { message: INVALID_DOCUMENTATION_REVIEW })
   assert.equal(parseDocumentationReview({ ...valid, job_id: null }).job_id, null)
+})
+
+test("allows drafts from cited outdated static matches or conflicting model assessments only", () => {
+  const review = parseDocumentationReview(valid)
+  assert.equal(canCreateDocumentationDraft(review), true)
+  const noConflict = parseDocumentationReview({ ...valid, assessments: [], coverage: { ...valid.coverage, sections_total: 0, sections_completed: 0, sections_pending: 0, sections_failed: 0, claims_assessed: 0 } })
+  const staticItem = { id: "a".repeat(64), status: "outdated", claim_type: "feature", claim: "Claim", message: "Mismatch", doc: { file: "README.md", start_line: 1, end_line: 1 }, code: { file: "src/a.py", start_line: 2, end_line: 2 } }
+  assert.equal(canCreateDocumentationDraft({ ...noConflict, static_review: { version: 1, fingerprint: "b".repeat(64), items: [staticItem], counts: { aligned: 0, outdated: 1, unverified: 0 } } }), true)
+  assert.equal(canCreateDocumentationDraft({ ...noConflict, static_review: { version: 1, fingerprint: "b".repeat(64), items: [{ ...staticItem, code: null }], counts: { aligned: 0, outdated: 1, unverified: 0 } } }), false)
+  assert.equal(canCreateDocumentationDraft({ ...noConflict, static_review: { version: 1, fingerprint: "b".repeat(64), items: [{ ...staticItem, status: "unverified" }], counts: { aligned: 0, outdated: 0, unverified: 1 } } }), false)
+  assert.equal(canCreateDocumentationDraft({ ...noConflict, status: "failed", static_review: { version: 1, fingerprint: "b".repeat(64), items: [staticItem], counts: { aligned: 0, outdated: 1, unverified: 0 } } }), false)
 })
 
 test("rejects malformed counts, statuses, citations, and nested objects", () => {
@@ -106,4 +209,23 @@ test("explains review failures and bounds unknown reasons", () => {
   }
   assert.equal(reviewReasonMessage("unknown_reason"), "unknown_reason")
   assert.equal(reviewReasonMessage("x".repeat(201)).length, 200)
+})
+
+test("explains native continuation stop reasons without implying rate limits", () => {
+  const noProgress = reviewReasonMessage("agent_no_progress")
+  assert.match(noProgress, /no new validated claim assessment/)
+  assert.match(noProgress, /saved work is retained/i)
+  assert.match(noProgress, /evidence and runtime/i)
+  const limit = reviewReasonMessage("agent_continuation_limit")
+  assert.match(limit, /automatic review session limit was reached/)
+  assert.match(limit, /saved findings are retained/i)
+  const incomplete = reviewReasonMessage("agent_incomplete")
+  assert.match(incomplete, /native reviewer stopped before finishing a Markdown file/i)
+  assert.match(incomplete, /saved findings are retained/i)
+  assert.doesNotMatch(incomplete, /rate limit/i)
+  assert.match(reviewReasonMessage("workflow_replaced"), /workflow changed/i)
+  assert.match(reviewReasonMessage("native_prompt_budget_exhausted"), /prompt-turn budget/i)
+  assert.match(reviewReasonMessage("native_prompt_budget_exhausted"), /saved findings are retained/i)
+  assert.match(reviewReasonMessage("agent_cleanup_failed"), /could not be shut down cleanly/i)
+  assert.match(reviewReasonMessage("agent_cleanup_failed"), /agent runtime/i)
 })

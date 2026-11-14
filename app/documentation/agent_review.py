@@ -83,7 +83,7 @@ def validate_result(result, snapshot, section, model, identity):
         if (set(binding) != {'adapter', 'runtime', 'model', 'job_sha256', 'prompt_sha256', 'settings_sha256', 'deadline_seconds', 'native_session_resumable'}
                 or binding['adapter'] != 'antigravity-native-acp-v1' or binding['runtime'] != '1.5.8'
                 or binding['model'] != model or binding['job_sha256'] != digest
-                or type(binding['deadline_seconds']) is not int or not 1 <= binding['deadline_seconds'] <= 300
+                or type(binding['deadline_seconds']) is not int or not 1 <= binding['deadline_seconds'] <= 900
                 or binding['native_session_resumable'] is not False):
             raise ValueError('invalid execution binding')
         for key in ('prompt_sha256', 'settings_sha256'):

@@ -32,9 +32,17 @@ def review_settings():
     from app.model_preferences import get_review_agent_selection
     selection = get_review_agent_selection()
     if selection is not None:
-        from . import agent_review
+        from . import agent_review, native_result, hybrid
         from app import antigravity_bridge
-        return {"kind": "antigravity", "limits": review_limits(), "model": selection["model"],
+        return {"kind": "antigravity", "limits": review_limits(),
+                "workflow": "file_agents_v1", "max_reviewers": 5,
+                "hybrid_policy": 1, "static_engine": hybrid.engine_fingerprint(),
+                "hybrid_contract": hashlib.sha256(inspect.getsource(hybrid).encode()).hexdigest(),
+                "static_triage_threshold": antigravity_bridge.static_triage_threshold(),
+                "max_prompt_calls": antigravity_bridge.workflow_prompt_budget(),
+                "result_contract": hashlib.sha256(inspect.getsource(native_result).encode()).hexdigest(),
+                "deadline_seconds": antigravity_bridge.review_timeout_seconds(),
+                "model": selection["model"],
                 "identity": selection["identity"],
                 "agent_review": hashlib.sha256(inspect.getsource(agent_review).encode()).hexdigest(),
                 "bridge": hashlib.sha256(inspect.getsource(antigravity_bridge).encode()).hexdigest()}

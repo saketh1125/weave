@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-14",
+  "selected_model": "codestral-2508",
+  "selection_scope": "local Mistral registry defaults; Antigravity reviewer selection preserved",
+  "checks": {
+    "account_1_grounded_json": true,
+    "account_2_grounded_json": true,
+    "account_1_tool_call": true,
+    "account_2_tool_call": true,
+    "app_primary_connection": true,
+    "app_secondary_connection": true,
+    "actual_qa_prompt_builder_with_synthetic_evidence": {
+      "passed": true,
+      "purpose_from_documentation": true,
+      "implementation_from_code": true,
+      "both_bracket_citations": true,
+      "unknown_feature_not_invented": true,
+      "elapsed_seconds": 0.77,
+      "prompt_tokens": 268,
+      "completion_tokens": 38
+    }
+  },
+  "unavailable_candidates": [
+    {
+      "model": "mistral-large-4",
+      "both_accounts_http": 403,
+      "provider_code": "tier_not_allowed"
+    },
+    {
+      "model": "mistral-medium-2604",
+      "both_accounts_http": 429,
+      "primary_requests_per_minute_limit": 0
+    },
+    {
+      "model": "mistral-small-2603",
+      "both_accounts_http": 429,
+      "primary_requests_per_minute_limit": 0
+    }
+  ],
+  "selection_order_note": "Stopped at the first candidate that passed grounded JSON on both accounts; lower-capacity candidates were not tested. This is suitability ordering for repository Q&A/tools, not a universal model ranking.",
+  "deployment": "Environment-only recreation of existing tested API/worker image; unfinished hybrid application changes were not built or deployed.",
+  "repository_content_sent": false,
+  "limits": [
+    "Tiny synthetic checks only; no representative quality/load benchmark.",
+    "Observed idle API/worker/database memory does not measure embedding/indexing peaks."
+  ]
+}

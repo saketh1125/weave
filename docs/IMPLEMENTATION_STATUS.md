@@ -82,3 +82,19 @@ The authenticated synthetic Settings probe reports Mistral `model_access_denied`
 A final inclusion scan found no common token/private-key patterns in 270 candidate files. An exact-value scan against local credential values also found no matches. The original 274 Sentra source files, working-tree status, application branches/remotes, HEAD, Git configuration and index match the migration baseline; Codex desktop bookkeeping references changed automatically while this chat remained attached to Sentra.
 
 A real whole-repository model review, a new Weave PR publication, browser interaction verification, and cloud deployment remain unverified. Six scanner advisories remain open because upstream Semgrep constraints exclude the patched dependencies.
+
+## Native hybrid whole-file review candidate — 2026-11-14
+
+The candidate replaces native heading-section scheduling with one native planner and at most five concurrent file-owning reviewers, including any optional static-triage lane. Static checks run first; reusable instances, unresolved leads and broader AI reasoning remain distinguishable. Source-bound fingerprints, saved file/triage progress, cumulative prompt budgets, exact citations, Markdown-only drafts and approved publication remain in place without a database migration.
+
+The integrated backend passed **579 tests**, and all **31 frontend checks** and the frontend production build passed. A labeled synthetic hybrid run covered its five expected claims, reused two static results, and produced no false-confident labels or duplicate claims in that fixture. It used three native prompt turns over 183.214 seconds; provider-internal call/token counts were not available. Live large-queue triage and whole-repository accuracy remain unverified.
+
+For the demo, both configured Mistral accounts passed JSON/tool tests using `codestral-2508`, and the actual Q&A prompt builder passed a synthetic documentation/code grounding check. This configuration was applied to the prior tested image. The hybrid candidate remains separate until its final rollout check. No new Antigravity login is required; runtime changes require a synthetic re-verification.
+
+### Approved local rollout
+
+The candidate was applied to Weave after explicit approval. The API readiness check passed, the existing Antigravity profile passed live synthetic re-verification, and the worker was recreated using the same tested image. No database migration or new login was required. Old section-based conversations remain saved and require a fresh review for the new whole-file policy.
+
+A live Codestral draft smoke changed only an invented README HTTP status from 200 to 202, matching the cited FastAPI declaration; source code remained unchanged. It used one request, 596 prompt tokens and 114 completion tokens, taking 1.33 seconds. No generated documentation PR was published.
+
+Sentra demo PR #2 is separately open against its main branch for the user to analyze; it contains a Q&A embedding-cache fix and concurrency regression test. The original local Sentra checkout remains unchanged. A real whole-repository native review and browser interaction acceptance have not been completed.

@@ -55,6 +55,7 @@ class ACPClient:
         self.server_requests = 0
         self._close_task = None
         self.session_id: str | None = None
+        self.session_ids: set[str] = set()
         self.closed = False
         self.reader = asyncio.create_task(self._read())
 
@@ -88,11 +89,15 @@ class ACPClient:
             result = await asyncio.wait_for(asyncio.shield(future), self._remaining())
             if method == "session/new" and isinstance(result, dict) and isinstance(result.get("sessionId"), str):
                 self.session_id = result["sessionId"]
+                self.session_ids.add(self.session_id)
             return result
         except asyncio.CancelledError:
-            if self.session_id and not self.closed:
+            session_id = params.get("sessionId") if method == "session/prompt" else None
+            if method == "session/prompt" and session_id is None and len(self.session_ids) == 1:
+                session_id = self.session_id
+            if session_id in self.session_ids and not self.closed:
                 try:
-                    await self._send({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": self.session_id}})
+                    await self._send({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": session_id}})
                 except ACPError:
                     pass
             raise
@@ -172,7 +177,7 @@ class ACPClient:
         if method == "session/request_permission":
             reply["result"] = {"outcome": {"outcome": "cancelled"}}
             params = message.get('params')
-            if isinstance(params, dict) and params.get('sessionId') == self.session_id:
+            if isinstance(params, dict) and (params.get('sessionId') in self.session_ids or (not self.session_ids and params.get('sessionId') == self.session_id)):
                 call, options = params.get('toolCall'), params.get('options')
                 # Native ACP's machine tool name, never its model-authored title,
                 # identifies our fixed, read-only MCP service's tools.

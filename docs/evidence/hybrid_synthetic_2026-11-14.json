@@ -1,0 +1,99 @@
+{
+  "fixture": "tests/fixtures/documentation_hybrid_labeled.json",
+  "static_counts": {
+    "aligned": 1,
+    "outdated": 1,
+    "unverified": 1
+  },
+  "static_instances": [
+    {
+      "claim": "a.md:1",
+      "status": "outdated"
+    },
+    {
+      "claim": "b.md:1",
+      "status": "aligned"
+    },
+    {
+      "claim": "b.md:2",
+      "status": "unverified"
+    }
+  ],
+  "expected": {
+    "a.md:1": "static_outdated",
+    "a.md:2": "conflicting",
+    "b.md:1": "static_aligned",
+    "b.md:2": "insufficient",
+    "b.md:3": "insufficient"
+  },
+  "workflow_status": "passed",
+  "reason": null,
+  "category": null,
+  "plan": {
+    "version": 2,
+    "assignments": [
+      [
+        "a.md"
+      ],
+      [
+        "b.md"
+      ]
+    ],
+    "static_triage": false
+  },
+  "planner_activity": {
+    "steps": 3,
+    "errors": 0,
+    "last_error_code": null
+  },
+  "file_statuses": {
+    "a.md": "completed",
+    "b.md": "completed"
+  },
+  "observed_ai_verdicts": {
+    "a.md:2": [
+      "conflicting"
+    ],
+    "b.md:3": [
+      "insufficient"
+    ],
+    "b.md:2": [
+      "insufficient"
+    ]
+  },
+  "reused_static_claims": [
+    "a.md:1",
+    "b.md:1"
+  ],
+  "covered_expected_claims": [
+    "a.md:1",
+    "a.md:2",
+    "b.md:1",
+    "b.md:2",
+    "b.md:3"
+  ],
+  "coverage_count": 5,
+  "false_confident_ai_labels": [],
+  "duplicate_ai_citations": {},
+  "metrics": {
+    "prompt_calls": 3,
+    "model_calls": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "elapsed_seconds": 183.214
+  },
+  "cleanup_failed": false,
+  "limitations": [
+    "Single synthetic fixture; no general accuracy estimate.",
+    "Unverified means evidence was insufficient, not proof of absence.",
+    "Model-internal calls and token counts are unavailable.",
+    "Live large-queue triage was not measured."
+  ],
+  "static_resolved_claims": [
+    "a.md:1",
+    "b.md:1"
+  ],
+  "static_reuse_count": 2,
+  "duplicate_static_ai_claims": [],
+  "false_confident_ai_label_count": 0
+}

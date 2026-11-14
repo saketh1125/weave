@@ -215,9 +215,7 @@ reviewer chooses one lane. API requests and review workers each use a consistent
 preference snapshot. Changed selections invalidate incompatible saved reviews.
 
 Antigravity is an opt-in **local documentation reviewer**, separate from direct
-API adapters. Weave requires its own bridge setup and verification; the bridge
-was unavailable or unconfigured during the 2026-11-14 check, so it is not
-verified as connected. It does not provide planner, draft generation or Q/A APIs. The
+API adapters. Weave requires its own bridge setup and verification. Earlier migration checks found it unconfigured; the authenticated native runtime subsequently passed synthetic planner/reviewer fixtures. It provides the planner inside the local documentation workflow, while draft generation and Q&A retain their separate API connections. The
 settings page requires a live invented-fixture test before enabling the selected
 runtime-offered model as reviewer. Available model IDs are discovered from the
 actual account; discovery does not verify every offered model. Existing Markdown
@@ -237,9 +235,16 @@ runs bounded isolated containers, accepts one review at a time, and cancels jobs
 when polling stops for 20 seconds. Explicit cancellation also cancels the native
 session/container. Only validated assessments are returned. Code/runtime changes
 invalidate verification and require restarting the bridge and retesting. Native
-conversation resumption is deliberately disabled; completed sections persist,
-and an incomplete section starts a fresh investigation on explicit resume.
+conversation resumption is deliberately disabled across containers. Saved file-level results, the planner allocation and processed static leads resume from snapshot-bound application checkpoints. One native planner chooses one to five concurrent reviewers with whole-file ownership; any dedicated static-triage reviewer counts within five. There is no native heading-section scheduling. Cumulative native prompt turns are bounded by `SENTRA_NATIVE_MAX_PROMPT_CALLS` (default 18), and the reviewer phase by `SENTRA_ANTIGRAVITY_REVIEW_TIMEOUT_SECONDS` (default 600, range 60–900). Unknown model-call/token usage remains null. Synthetic connection tests retain their separate 120-second deadline.
 
 See [local runtime setup](../deployment/antigravity/README.md). This is a local
 testing integration, not cloud deployment support. Do not expose the bridge,
 publish its token, or mount Docker access into a public API to make it work.
+
+## Demo account model selection — 2026-11-14
+
+For the two configured accounts, `mistral-large-4` returned HTTP 403 `tier_not_allowed`. `mistral-medium-2604` and `mistral-small-2603` returned HTTP 429; the inspected primary-account responses advertised a zero requests-per-minute limit. Catalog visibility alone did not establish usable model access.
+
+`codestral-2508` passed a small evidence-grounded JSON test and a forced structured tool-call test on **both** accounts. Each successful request took approximately 0.6–0.84 seconds in this test. The synthetic evidence distinguished a documented port from the actual code port, required both citations, and left an unsupported Redis claim unknown. These are connection and format smoke checks, not representative quality or capacity benchmarks.
+
+The local `.env` selects `codestral-2508` for `SENTRA_DOCUMENTATION_MODEL` and `SENTRA_LLM_MODEL`. The registry's Mistral defaults then use it for all Mistral-backed workflows; the independent Antigravity reviewer selection is preserved. Both Compose files now honor `SENTRA_LLM_MODEL` rather than hard-coding it. No credential values are stored in this document, and no runtime account rotation or silent model fallback was introduced.

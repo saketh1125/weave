@@ -130,12 +130,15 @@ async def test_review_accepts_bound_five_minute_execution(monkeypatch):
     assert (await agent_review.review_section(SNAPSHOT, SECTION, 'm', 'binding'))['status'] == 'completed'
 
 def test_agent_settings_bind_model_and_runtime(monkeypatch):
+    monkeypatch.setenv('SENTRA_ANTIGRAVITY_REVIEW_TIMEOUT_SECONDS', '600')
     monkeypatch.setattr(model_preferences, 'get_review_agent_selection', lambda: {'model': 'm', 'identity': 'binding'})
     settings = model.review_settings()
     assert settings['kind'] == 'antigravity' and settings['identity'] == 'binding'
     run = type('Run', (), {'manifest': {'model_settings': settings}})()
     assert model.compatible_review(run, settings)
     assert not model.compatible_review(run, {**settings, 'identity': 'changed'})
+    monkeypatch.setenv('SENTRA_ANTIGRAVITY_REVIEW_TIMEOUT_SECONDS', '900')
+    assert not model.compatible_review(run, model.review_settings())
 
 
 def test_review_response_exposes_safe_activity_without_inflating_completed_counts():
@@ -168,7 +171,7 @@ async def test_agent_rejects_unbound_or_incomplete_results(monkeypatch, tamper):
         if tamper == 'ranges': result['review']['read_ranges'] *= 513
         if tamper == 'model': result['models'] = ['other']
         if tamper == 'deadline':
-            binding = {**result['execution'], 'deadline_seconds': 301}
+            binding = {**result['execution'], 'deadline_seconds': 901}
             binding.pop('sha256')
             result['execution'] = {**binding, 'sha256': hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()}
         return result
@@ -176,7 +179,7 @@ async def test_agent_rejects_unbound_or_incomplete_results(monkeypatch, tamper):
     assert (await agent_review.review_section(SNAPSHOT, SECTION, 'm', 'binding'))['status'] == 'failed'
 
 @pytest.mark.integration
-def test_persisted_agent_sections_resume_without_planner(monkeypatch):
+def test_persisted_legacy_agent_sections_resume_without_planner(monkeypatch):
     import asyncio
     import os
     import uuid
@@ -195,6 +198,8 @@ def test_persisted_agent_sections_resume_without_planner(monkeypatch):
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         monkeypatch.setattr(service, 'SessionLocal', sessions)
         monkeypatch.setattr(model_preferences, 'get_review_agent_selection', lambda: {'model': 'm', 'identity': 'binding'})
+        current_settings = model.review_settings
+        monkeypatch.setattr(model, 'review_settings', lambda: {key: value for key, value in current_settings().items() if key != 'workflow'})
         async def no_planner(*args, **kwargs): raise AssertionError('planner must not run')
         monkeypatch.setattr(planner, 'create_plan', no_planner)
         rid, jid, run_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()

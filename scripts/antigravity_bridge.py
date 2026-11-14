@@ -16,13 +16,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import test_antigravity_local as runner
+from scripts import antigravity_workflow as workflow_runner
+from app.acp_transport import ACPError
 
 MAX_BODY = 50 * 1024 * 1024
 
 
 def runtime_identity():
     files = [Path(__file__), ROOT / "scripts/test_antigravity_local.py", ROOT / "app/acp_transport.py",
-        ROOT / "app/documentation/assessment.py"]
+        ROOT / "app/documentation/assessment.py", ROOT / "app/documentation/native_plan.py",
+        ROOT / "scripts/antigravity_workflow.py"]
     files += sorted((ROOT / "deployment/antigravity").glob("*"))
     digest = hashlib.sha256(b"antigravity-native-1.5.8-acp-v1")
     for path in files:
@@ -62,15 +65,28 @@ class Bridge:
     def start(self, payload):
         if runtime_identity() != self.identity:
             raise ValueError("restart required")
-        if not isinstance(payload, dict) or set(payload) - {"kind", "model", "identity", "job", "context"}:
+        if not isinstance(payload, dict) or set(payload) - {"kind", "model", "identity", "job", "context", "deadline_seconds", "snapshot", "documentation_files", "plan", "completed_files", "reviewed_claims", "max_prompt_calls", "static_review", "completed_triage_ids"}:
             raise ValueError("invalid job")
         kind, model = payload.get("kind"), payload.get("model")
-        if kind not in {"test", "review"} or (model is not None and (not isinstance(model, str) or len(model) > 200)):
+        if kind not in {"test", "review", "workflow"} or (model is not None and (not isinstance(model, str) or len(model) > 200)):
             raise ValueError("invalid job")
+        deadline = payload.get("deadline_seconds")
+        if ((kind in {"review", "workflow"} and (type(deadline) is not int or not 60 <= deadline <= 900))
+                or (kind == "test" and "deadline_seconds" in payload)):
+            raise ValueError("invalid deadline")
+        budget = payload.get('max_prompt_calls', 18)
+        if kind == 'workflow' and (type(budget) is not int or not 1 <= budget <= 100):
+            raise ValueError('invalid prompt budget')
+        if kind == 'workflow':
+            snapshot, paths = payload.get('snapshot'), payload.get('documentation_files')
+            if (not isinstance(snapshot, dict) or not isinstance(paths, list) or not paths
+                    or any(not isinstance(key, str) or not isinstance(value, str) for key, value in snapshot.items())
+                    or any(not isinstance(path, str) or path not in snapshot for path in paths)):
+                raise ValueError('invalid workflow inventory')
         with self.lock:
             if any(not job["future"].done() for job in self.jobs.values()):
                 raise ValueError("local runner busy")
-            if kind == "review" and (payload.get("identity") != self.identity or not self.state["verified"]
+            if kind in {"review", "workflow"} and (payload.get("identity") != self.identity or not self.state["verified"]
                     or model != self.state["selected_model"]):
                 raise ValueError("review connection is not verified")
             # Retain no old source/results after a caller disappears.
@@ -128,15 +144,30 @@ class Bridge:
         try:
             if payload["kind"] == "test":
                 report = await runner.run(model=payload.get("model"))
+            elif payload['kind'] == 'workflow':
+                report = await workflow_runner.run(payload['snapshot'], payload['documentation_files'],
+                    payload.get('model'), payload['deadline_seconds'], on_progress, plan=payload.get('plan'),
+                    completed_files=payload.get('completed_files'), reviewed_claims=payload.get('reviewed_claims'),
+                    max_prompt_calls=payload.get('max_prompt_calls', 18), static_review=payload.get('static_review'),
+                    completed_triage_ids=payload.get('completed_triage_ids'))
             else:
                 with tempfile.TemporaryDirectory(dir=ROOT / "work", prefix="acp-job-") as directory:
                     path = Path(directory) / "job.json"
                     path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
                     runner.load_job(path)  # Validate before starting the native process.
                     report = await runner.run(model=payload.get("model"), job=path, allow_source_upload=True,
-                        job_context=payload.get("context"), on_progress=on_progress)
-        except (ValueError, OSError, RuntimeError):
+                        job_context=payload.get("context"), on_progress=on_progress,
+                        review_timeout_seconds=payload["deadline_seconds"])
+        except (ValueError, OSError, RuntimeError, ACPError, asyncio.TimeoutError) as exc:
             report = {"status": "failed"}
+            if isinstance(exc, ACPError):
+                report["reason"] = str(exc)
+                if exc.category:
+                    report["category"] = exc.category
+                if exc.code is not None:
+                    report["rpcErrorCode"] = exc.code
+            elif isinstance(exc, asyncio.TimeoutError):
+                report["reason"] = "transport deadline exceeded"
         if report.get("status") == "failed":
             report["model"] = payload.get("model")
         report["identity"] = self.identity

@@ -64,6 +64,18 @@ async def run_review(job):
         limits = provider.review_limits()
         await session.commit()
 
+    if manifest.get('model_settings', {}).get('workflow') == 'file_agents_v1':
+        from .native_service import run_native_review
+        try:
+            return await run_native_review(job, run_id, snapshot, tasks, manifest)
+        except provider.ProviderError as exc:
+            async with SessionLocal() as session:
+                await fenced(session, job)
+                run = await session.get(DocumentationReview, run_id, with_for_update=True)
+                run.status, run.reason = 'failed', exc.reason
+                await session.commit()
+                return {'run_id': str(run_id), 'status': run.status}
+
     async def request(messages, tool_specs, *, model, max_tokens, credential_slot=1, planning=False, prompt_tokens_upper_bound=None, force_assessment=False):
         workflow = 'planner' if planning else 'reviewer'
         connection = model_connections.resolve(workflow, 1 if planning else credential_slot)

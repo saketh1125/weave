@@ -3,7 +3,7 @@ import { api } from "@/lib/api"
 import { StatusBadge, ModelBadge, MetricTile } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { INVALID_DOCUMENTATION_REVIEW, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview } from "@/lib/documentation-review"
+import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview } from "@/lib/documentation-review"
 import { INVALID_DOCUMENTATION_DRAFT, parseDocumentationDraft, parseLatestDocumentationDraft, type DocumentationDraft } from "@/lib/documentation-draft"
 
 function citation(c: { file: string; start_line: number; end_line: number }) {
@@ -97,7 +97,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
   }
 
   const base = `/repos/${encodeURIComponent(repoId)}/documentation/reviews`
-  const canDraft = (review?.status === "completed" || review?.status === "paused") && review.assessments.some(item => item.verdict === "conflicting")
+  const canDraft = canCreateDocumentationDraft(review)
   const approvalKey = draft ? `${repoId}:${draft.id}:${draft.draft_hash}` : null
   async function createDraft() {
     if (!review || !canDraft) return
@@ -126,7 +126,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       <CardDescription>Start with your Markdown, then verify its claims against the code. Your configured reviewer receives selected documentation and source excerpts; this review does not change files.</CardDescription>
     </CardHeader>
     <CardContent>
-      <details className="mb-5 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Coverage and content sharing</summary><p className="mt-2 max-w-3xl leading-6">Coverage counts indexed files and reviewed sections, not every tracked file or factual claim. Starting a review sends selected documentation and code to the configured model connections. Check Settings before starting if you need to choose where that content is shared. The result identifies the review model.</p></details>
+      <details className="mb-5 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Coverage and content sharing</summary><p className="mt-2 max-w-3xl leading-6">Coverage counts indexed files and validated claims, not every tracked file or factual claim. Starting a review sends selected documentation and code to the configured model connections. Check Settings before starting if you need to choose where that content is shared. The result identifies the review model.</p></details>
       {error && <p role="alert" className="notice notice-error mb-4">{error}</p>}
       {pollError && <p role="alert" className="notice notice-error mb-4">{pollError}</p>}
       <div className="flex flex-wrap gap-2">
@@ -136,7 +136,50 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       {retrySeconds > 0 && <p className="mt-2 text-sm" role="status">Continue is available in {retrySeconds} second{retrySeconds === 1 ? "" : "s"}.</p>}
       {review && <section aria-label="Documentation review results" className="mt-4">
         <div className="result-toolbar"><StatusBadge status={review.status} /><ModelBadge model={review.model} /><span className="text-sm">Commit: <code className="code-chip">{review.commit_sha || "Unavailable"}</code></span></div>
-        {review.reason && <div className={`notice mt-4 ${review.status === "failed" ? "notice-error" : "notice-warning"}`} role="status"><strong>{review.status === "failed" ? "Review stopped" : "Review paused"}</strong><p className="mt-1">{reviewReasonMessage(review.reason)}</p><p className="mt-1">{review.coverage.claims_assessed === 0 ? "No claims assessed yet." : "Assessed claims are retained."} Pending sections are not complete.</p></div>}
+        {review.static_review && <section className="surface-inset mt-4" aria-label="Static review leads">
+          <h3 className="font-medium">Static review leads</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Static checks produce leads, not proof. “Unverified” means static checks could not confirm the claim; it is not an error result.</p>
+          <p className="mt-2 text-sm">{review.static_review.counts.aligned} aligned · {review.static_review.counts.outdated} outdated · {review.static_review.counts.unverified} unverified</p>
+          {review.merged_findings === null && review.static_review.items.map(item => <article key={item.id} className="rounded-md border p-3 mt-3">
+            <span className="rounded bg-muted px-2 py-1 text-xs">{item.status}</span><span className="ml-2 text-xs text-muted-foreground">{item.claim_type}</span>
+            <p className="mt-2 text-sm">Claim: {item.claim}</p><p className="mt-1 text-sm">{item.message}</p>
+            <p className="mt-2 text-xs text-muted-foreground">Documentation: <code>{citation(item.doc)}</code></p>
+            <p className="mt-1 text-xs text-muted-foreground">Code: {item.code ? <code>{citation(item.code)}</code> : "no citation"}</p>
+          </article>)}
+        </section>}
+        {review.merged_findings !== null && <section className="mt-4" aria-label="Merged review findings">
+          <h3 className="font-medium">Findings and supporting evidence</h3>
+          {review.merged_findings.map((group, index) => <article key={`${group.doc.file}:${group.doc.start_line}:${index}`} className="surface-inset mt-3">
+            <p className="text-sm font-medium">{group.claim}</p><p className="mt-1 text-xs text-muted-foreground">Documentation: <code>{citation(group.doc)}</code></p>
+            <div className="mt-3 grid gap-3">{group.evidence.map(entry => entry.origin === "static"
+              ? <div key={`static:${entry.finding.id}`} className="rounded-md border p-3">
+                <p className="text-sm">Static check · {entry.finding.status} · {entry.finding.claim_type}</p><p className="mt-1 text-sm">{entry.finding.message}</p>
+                <p className="mt-2 text-xs text-muted-foreground">Code: {entry.finding.code ? <code>{citation(entry.finding.code)}</code> : "no citation"}</p>
+              </div>
+              : <div key={`ai:${entry.finding.id}`} className="rounded-md border p-3">
+                <p className="text-sm">AI model assessment · {entry.finding.verdict} <span className="text-xs text-muted-foreground">(model assessment, not proof)</span></p><p className="mt-1 text-sm">{entry.finding.explanation}</p>
+                <div className="mt-2 grid gap-1 text-xs text-muted-foreground">{entry.finding.code_citations.length
+                  ? entry.finding.code_citations.map((code, codeIndex) => <p key={`${code.file}:${code.start_line}:${codeIndex}`}>Code: <code>{citation(code)}</code></p>)
+                  : <p>Code: no citations available</p>}</div>
+                {entry.finding.suggested_update && <p className="mt-2 text-sm">Suggested update: {entry.finding.suggested_update}</p>}
+              </div>)}</div>
+          </article>)}
+        </section>}
+        {review.reason && <div className={`notice mt-4 ${review.status === "failed" ? "notice-error" : "notice-warning"}`} role="status"><strong>{review.status === "failed" ? "Review stopped" : "Review paused"}</strong><p className="mt-1">{reviewReasonMessage(review.reason)}</p><p className="mt-1">{review.native_progress ? (review.native_progress.claims_assessed === 0 ? "No validated claims assessed yet." : "Saved validated claims are retained.") + " Unfinished files are not complete." : (review.coverage.claims_assessed === 0 ? "No claims assessed yet." : "Assessed claims are retained.") + " Pending sections are not complete."}</p></div>}
+        {review.native_progress ? <>
+          <div className="metric-grid mt-4"><MetricTile label="Markdown files completed" value={`${review.native_progress.files_completed} / ${review.native_progress.files_total}`} /><MetricTile label="Validated claims" value={review.native_progress.claims_assessed} /><MetricTile label="Files failed" value={<span className={review.native_progress.files_failed ? "text-red-600" : ""}>{review.native_progress.files_failed}</span>} hint={`${review.native_progress.files_pending} pending or in progress`} /></div>
+          <div className="surface-inset mt-4">
+            <div className="flex flex-wrap justify-between gap-2 text-sm"><strong>Native review progress</strong><span>{review.native_progress.files_completed} completed · {review.native_progress.files_pending} pending or in progress · {review.native_progress.files_failed} failed</span></div>
+            <div className="progress-track mt-2" role="progressbar" aria-label="Markdown files completed" aria-valuemin={0} aria-valuemax={review.native_progress.files_total || 1} aria-valuenow={review.native_progress.files_completed}><div className="progress-fill" style={{ width: `${review.native_progress.files_total ? Math.min(100, review.native_progress.files_completed / review.native_progress.files_total * 100) : 0}%` }} /></div>
+            <p className="mt-2 text-xs text-muted-foreground">Phase: {review.native_progress.phase === "static_checks" ? "Static checks" : review.native_progress.phase}</p>
+            <div className="mt-3 grid gap-3">{review.native_progress.agents.map(agent => <section key={agent.reviewer} className="rounded-md border p-3" aria-label={`Reviewer agent ${agent.reviewer}`}>
+              <strong className="text-sm">Reviewer agent {agent.reviewer}</strong>
+              {agent.files.length ? <ul className="mt-2 grid gap-1 text-sm">{agent.files.map(file => <li key={file.path} className="flex flex-wrap justify-between gap-2"><code>{file.path}</code><span>{file.status} · {file.claims_assessed} validated claims</span></li>)}</ul> : <p className="mt-1 text-sm text-muted-foreground">No Markdown files assigned.</p>}
+            </section>)}{review.native_progress.triage && <section className="rounded-md border p-3" aria-label={`Triage agent ${review.native_progress.triage.reviewer}`}>
+              <strong className="text-sm">Triage agent {review.native_progress.triage.reviewer}</strong><p className="mt-1 text-sm">{review.native_progress.triage.status} · {review.native_progress.triage.findings_processed} / {review.native_progress.triage.findings_total} findings processed</p>
+            </section>}</div>
+          </div>
+        </> : <>
         {review.plan && <p className="mt-1 text-sm">Planner: assigned {review.plan.assignments.reduce((total, item) => total + item.task_ids.length, 0)} sections across {review.plan.reviewer_count} reviewer{review.plan.reviewer_count === 1 ? "" : "s"}.</p>}
         <div className="metric-grid mt-4"><MetricTile label="Indexed files" value={review.coverage.files_total} /><MetricTile label="Sections completed" value={`${review.coverage.sections_completed} / ${review.coverage.sections_total}`} /><MetricTile label="Claims assessed" value={review.coverage.claims_assessed} /><MetricTile label="Failed sections" value={<span className={review.coverage.sections_failed ? "text-red-600" : ""}>{review.coverage.sections_failed}</span>} hint={`${review.coverage.sections_pending} sections pending`} /></div>
         {review.activity && <div className="surface-inset mt-4" role="status">
@@ -149,6 +192,19 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
           <div className="flex flex-wrap justify-between gap-2 text-sm"><strong>Review progress</strong><span>{review.coverage.sections_completed} completed · {review.coverage.sections_pending} pending · {review.coverage.sections_failed} failed</span></div>
           <div className="progress-track mt-2" role="progressbar" aria-label="Sections completed" aria-valuemin={0} aria-valuemax={review.coverage.sections_total || 1} aria-valuenow={review.coverage.sections_completed}><div className="progress-fill" style={{ width: `${review.coverage.sections_total ? Math.min(100, review.coverage.sections_completed / review.coverage.sections_total * 100) : 0}%` }} /></div>
         </div>
+        </>}
+        {review.cost && <div className="surface-inset mt-4" aria-label="Native review usage">
+          <strong className="text-sm">Native review usage</strong>
+          <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
+            <p>Native prompt turns: {review.cost.prompt_calls} / {review.cost.budget.max_prompt_calls}</p>
+            <p>Provider model calls: {review.cost.model_calls ?? "Not reported"}</p>
+            <p>Input tokens: {review.cost.input_tokens ?? "Not reported"}</p>
+            <p>Output tokens: {review.cost.output_tokens ?? "Not reported"}</p>
+            <p>Elapsed: {review.cost.elapsed_seconds} seconds</p>
+            <p>Time budget: {review.cost.budget.deadline_seconds} seconds</p>
+            {review.cost.incomplete && <p role="status">Review coverage is incomplete.</p>}
+          </div>
+        </div>}
         <p className="mt-1 text-sm text-muted-foreground">Scope: {review.coverage.scope}</p>
         {review.source_coverage ? <>
           <p className="mt-1 text-sm">Source coverage: {review.source_coverage.status} · Additional source files: {review.source_coverage.supplemented_paths.length} · unavailable files: {review.source_coverage.unavailable_paths.length} · missing indexed Markdown: {review.source_coverage.missing_indexed_markdown.length}</p>
@@ -162,7 +218,8 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
           <p className="font-medium">Some indexed files could not be read and were not reviewed.</p>
           <ul className="mt-1 list-disc pl-5">{review.coverage.unreadable_files.map((file, index) => <li key={`${file}:${index}`}><code>{file}</code></li>)}</ul>
         </div>}
-        {review.assessments.map(item => <article key={item.id} className="surface-inset mt-3">
+        {review.merged_findings === null && review.assessments.length > 0 && <h3 className="mt-5 font-medium">AI model assessments <span className="text-sm font-normal text-muted-foreground">(model assessments, not proof)</span></h3>}
+        {review.merged_findings === null && review.assessments.map(item => <article key={item.id} className="surface-inset mt-3">
           <StatusBadge status={item.verdict} />
           <p className="mt-1 text-sm">Claim: {item.claim}</p>
           <p className="mt-1 text-sm">{item.explanation}</p>
@@ -174,8 +231,8 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
         </article>)}
         {canDraft && <section aria-label="Documentation update draft" className="surface-inset mt-5">
           <p className="eyebrow">Review and approval</p><h3 className="font-medium">Documentation update</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Create a Markdown-only draft from saved conflicting claims. Review the full diff before approving a pull request.</p>
-          {review.status === "paused" && <p className="mt-2 text-sm" role="status">This review is incomplete. The draft includes only saved conflicting claims; pending claims are not covered.</p>}
+          <p className="mt-1 text-sm text-muted-foreground">Create a Markdown-only draft from outdated static matches with code citations or conflicting model assessments. Review the full diff before approving a pull request.</p>
+          {review.status === "paused" && <p className="mt-2 text-sm" role="status">This review is incomplete. Only outdated static matches with code citations and conflicting model assessments are included; unverified static leads, other model verdicts, and pending items are not covered.</p>}
           <Button className="mt-3" variant="outline" disabled={busy || publicationBusy} onClick={() => void createDraft()}>{busy ? "Creating draft…" : "Update documentation"}</Button>
           {draft && <div className="mt-4 grid gap-3">
             {draft.review_id !== review.run_id && <p role="alert" className="text-sm text-red-600">This saved draft belongs to a different review and cannot be approved here.</p>}

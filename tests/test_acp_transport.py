@@ -202,3 +202,27 @@ def test_native_permission_uses_machine_name_and_session_never_title():
         finally:
             await client.close()
     asyncio.run(run())
+
+
+def test_multiplex_permissions_and_cancellation_are_session_specific():
+    async def run():
+        client, _ = await make_client('cancel', allowed_tool_names=frozenset({'mcp_sentra_read_source'}))
+        client.session_ids.update({'one', 'two'})
+        client.session_id = 'two'
+        sent = []
+        async def capture(message): sent.append(message)
+        client._send = capture
+        try:
+            for sid in ('one', 'two', 'unknown'):
+                await client._handle_request({'id': 1, 'method': 'session/request_permission', 'params': {
+                    'sessionId': sid, 'toolCall': {'name': 'mcp_sentra_read_source', 'kind': 'other'},
+                    'options': [{'optionId': 'allow', 'kind': 'allow_once'}]}})
+            assert [x['result']['outcome']['outcome'] for x in sent] == ['selected', 'selected', 'cancelled']
+            task = asyncio.create_task(client.request('session/prompt', {'sessionId': 'one'}))
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError): await task
+            assert sent[-1]['method'] == 'session/cancel' and sent[-1]['params']['sessionId'] == 'one'
+        finally:
+            await client.close()
+    asyncio.run(run())
