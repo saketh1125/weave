@@ -78,6 +78,7 @@ export const api = {
         body: JSON.stringify(body),
       })
       await requireSuccess(res)
+      return res.json() as Promise<ModelSettings>
     },
     testAntigravity: () => post<{ status: string; message: string }>("/settings/models/antigravity/test", {}),
     testAntigravityGeneration: () => post<{ status: "passed" | "failed"; message: string }>("/settings/models/antigravity/test-generation", {}),

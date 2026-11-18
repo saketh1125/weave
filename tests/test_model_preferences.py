@@ -38,6 +38,32 @@ async def test_rejects_unknown_connections_and_unverified_native_workflows():
 
 
 @pytest.mark.asyncio
+async def test_saves_other_changes_while_existing_antigravity_routes_are_unavailable(monkeypatch):
+    from app.routers import model_settings as api
+
+    row = SimpleNamespace(workflows={"reviewer": api.AG, "qa": api.AG}, antigravity_model="fixture",
+                          antigravity_verified_model="fixture", antigravity_identity="digest")
+    class Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def get(self, model, key): return row
+        async def commit(self): pass
+
+    async def locked(session): return row
+    async def unavailable(): return {"enabled": False, "models": []}
+    monkeypatch.setattr(api, "SessionLocal", Session)
+    monkeypatch.setattr(api, "_locked_row", locked)
+    monkeypatch.setattr(api.antigravity_bridge, "status", unavailable)
+
+    saved = await api.patch_model_settings(api.SettingsPatch(workflows={"qa": "mistral_primary", "drift": "mistral_secondary"}))
+    assert saved["workflows"]["reviewer"] == api.AG
+    assert saved["workflows"]["qa"] == "mistral_primary"
+    assert saved["workflows"]["drift"] == "mistral_secondary"
+    with pytest.raises(HTTPException, match="Verify the selected Antigravity model first"):
+        await api.patch_model_settings(api.SettingsPatch(workflows={"draft": api.AG}))
+
+
+@pytest.mark.asyncio
 async def test_all_workflow_routes_are_returned_with_saved_values_and_existing_defaults(monkeypatch):
     from app.routers import model_settings as api
     async def status():

@@ -35,9 +35,10 @@ def _registry():
         return model_connections._registry()
 
 
-async def _response(preferences):
+async def _response(preferences, status=None):
     registry, defaults = _registry()
-    status = await antigravity_bridge.status()
+    if status is None:
+        status = await antigravity_bridge.status()
     selected = preferences.antigravity_model
     verified = bool(status.get("enabled") and selected and selected == preferences.antigravity_verified_model and preferences.antigravity_identity and preferences.antigravity_identity == status.get("identity") and selected in status.get("models", []))
     connections = [{"id": c.name, "label": c.name.replace("_", " ").title(), "adapter": c.adapter,
@@ -72,16 +73,17 @@ async def patch_model_settings(body: SettingsPatch):
     status = await antigravity_bridge.status()
     async with SessionLocal() as session:
         row = await _locked_row(session)
-        if body.antigravity_model is not None:
+        model_changed = body.antigravity_model is not None and body.antigravity_model != row.antigravity_model
+        if model_changed:
             if not status.get("enabled") or body.antigravity_model not in status.get("models", []):
                 raise HTTPException(422, "Antigravity model is unavailable")
-            if body.antigravity_model != row.antigravity_model:
-                row.antigravity_model = body.antigravity_model
-                row.antigravity_verified_model = None
-                row.antigravity_identity = None
+            row.antigravity_model = body.antigravity_model
+            row.antigravity_verified_model = None
+            row.antigravity_identity = None
         workflows = dict(row.workflows or {})
+        added_native_route = any(value == AG and workflows.get(workflow) != AG for workflow, value in updates.items())
         workflows.update(updates)
-        if AG in workflows.values() and not (status.get("enabled") and row.antigravity_model
+        if (added_native_route or (model_changed and AG in workflows.values())) and not (status.get("enabled") and row.antigravity_model
                 and row.antigravity_model == row.antigravity_verified_model
                 and row.antigravity_model in status.get("models", []) and row.antigravity_identity
                 and row.antigravity_identity == status.get("identity")):
@@ -89,7 +91,7 @@ async def patch_model_settings(body: SettingsPatch):
         row.workflows = workflows
         await session.commit()
         preferences = await load_preferences(session)
-    return await _response(preferences)
+    return await _response(preferences, status=status)
 
 
 @router.post("/antigravity/test")
@@ -97,6 +99,8 @@ async def test_antigravity():
     async with SessionLocal() as session:
         preferences = await load_preferences(session)
     result = await antigravity_bridge.test(preferences.antigravity_model)
+    if not result.get("enabled") and result.get("status") == "unavailable":
+        return {"status": "unavailable", "message": result.get("message", "Local bridge unavailable.")}
     async with SessionLocal() as session:
         row = await _locked_row(session)
         # A concurrent selection change must not inherit a previous test result.
