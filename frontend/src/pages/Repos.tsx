@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { FolderGit2, GitBranch, Plus, RefreshCw } from "lucide-react"
+import { ArrowUpRight, BookOpen, FolderGit2, GitBranch, MessageSquare, Plus, RefreshCw, ShieldAlert } from "lucide-react"
+import { Link } from "react-router-dom"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +21,7 @@ export default function Repos() {
   const requestId = useRef(0)
   const [activeRepo, setActiveRepo] = useState(() => localStorage.getItem("weave.repoId") ?? "")
 
+  const selectedRepo = repos.find(repo => repo.id === activeRepo)
   const latestJob = savedJob?.repoId === activeRepo ? savedJob.job : null
 
   const refresh = useCallback(async () => {
@@ -78,23 +80,73 @@ export default function Repos() {
     }
   }
 
-  const connectPanel = <Card>
+  const connectPanel = <Card id="connect-repository" className="connect-panel">
       <CardHeader><div className="flex items-start gap-3"><div className="surface-inset rounded-xl p-3"><Plus className="h-5 w-5 text-primary" /></div><div><CardTitle>Connect a repository</CardTitle><CardDescription>Use a public Git URL, or a private GitHub URL when a token is configured.</CardDescription></div></div></CardHeader>
       <CardContent>
-        <form className="flex flex-wrap gap-3" onSubmit={addRepo}>
-          <input aria-label="Git repository URL" required type="url" placeholder="https://github.com/owner/repository" value={url} onChange={e => setUrl(e.target.value)} className="min-w-64 flex-1 rounded-md border bg-background px-3 py-2 text-sm" />
-          <input aria-label="Branch" placeholder="Branch" value={branch} onChange={e => setBranch(e.target.value)} className="w-32 rounded-md border bg-background px-3 py-2 text-sm" />
+        <form className="grid gap-3" onSubmit={addRepo}>
+          <input aria-label="Git repository URL" required type="url" placeholder="https://github.com/owner/repository" value={url} onChange={e => setUrl(e.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          <input aria-label="Branch" placeholder="Branch" value={branch} onChange={e => setBranch(e.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
           <Button type="submit" disabled={loading}><Plus className="mr-2 h-4 w-4" />{loading ? "Adding…" : "Add repository"}</Button>
         </form>
-        {error && <p role="alert" className="notice notice-error mt-3">{error}</p>}
       </CardContent>
     </Card>
   return <div className="page-stack">
-    <PageIntro eyebrow="WORKSPACE" title="Repositories" description="Your code, ready for a closer look."><span className="code-chip">{repos.length} connected</span></PageIntro>
-    {repos.length === 0 && connectPanel}
-    {activeRepo && latestJob && <div className="notice"><div className="result-toolbar"><span className="font-medium">Latest {latestJob.kind} job</span><StatusBadge status={latestJob.status} /><span className="text-xs">{latestJob.attempts} attempt{latestJob.attempts === 1 ? "" : "s"}</span></div>{latestJob.error && <p className="mt-2 text-red-600">{latestJob.error}</p>}</div>}
-    <div className="section-heading"><div><h2>Connected repositories</h2><p>Select a repository to make it your active workspace.</p></div><Button type="button" variant="outline" onClick={() => void refresh()} aria-label="Refresh repositories"><RefreshCw className="h-4 w-4" /></Button></div>
-    {repos.length === 0 ? <EmptyState icon={<FolderGit2 className="h-6 w-6" />} title="Your workspace starts here" description="Connect a repository above to start analysis." /> : <div className="grid gap-4 md:grid-cols-2">{repos.map(repo => <Card key={repo.id} className={activeRepo === repo.id ? "border-primary" : ""}><CardContent className="grid gap-5 p-5"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="surface-inset rounded-xl p-3"><FolderGit2 className="h-5 w-5 text-primary" /></div><div className="min-w-0"><h3 className="truncate font-semibold">{repo.name}</h3><p className="truncate text-sm text-muted-foreground">{repo.remote_url}</p></div></div><StatusBadge status={repo.status} /></div><div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span className="code-chip"><GitBranch className="h-3.5 w-3.5" /> {repo.branch}</span>{repo.commit_sha && <code className="code-chip">{repo.commit_sha.slice(0, 8)}</code>}{activeRepo === repo.id && <span className="code-chip">Active workspace</span>}</div><div className="flex flex-wrap gap-2">{(repo.status === "ready" || repo.status === "failed") && <Button variant="outline" disabled={reindexing !== null} onClick={() => void reindexRepo(repo.id)}>{reindexing === repo.id ? "Queuing…" : "Reindex"}</Button>}<Button variant={activeRepo === repo.id ? "default" : "outline"} onClick={() => { localStorage.setItem("weave.repoId", repo.id); setActiveRepo(repo.id) }}>{activeRepo === repo.id ? "Active" : "Select repository"}</Button></div></CardContent></Card>)}</div>}
-    {repos.length > 0 && connectPanel}
+    <PageIntro title="Repositories" description="Choose the repository you want to work on.">
+      <a className="repo-connect-link" href="#connect-repository"><Plus size={16} aria-hidden="true" /> Connect repository</a>
+    </PageIntro>
+
+    {selectedRepo && <section className="repository-overview" aria-labelledby="active-repository-title">
+      <div className="repository-overview-content">
+        <p className="eyebrow">Active repository</p>
+        <div className="repository-overview-title">
+          <h2 id="active-repository-title">{selectedRepo.name}</h2>
+          <StatusBadge status={selectedRepo.status} />
+        </div>
+        <div className="repository-meta">
+          <span><GitBranch size={14} aria-hidden="true" /> {selectedRepo.branch}</span>
+          {selectedRepo.commit_sha && <code title={selectedRepo.commit_sha}>{selectedRepo.commit_sha.slice(0, 8)}</code>}
+        </div>
+        {latestJob && <div className="repository-job">
+          <span>Latest {latestJob.kind} job</span><StatusBadge status={latestJob.status} />
+          <span>{latestJob.attempts} attempt{latestJob.attempts === 1 ? "" : "s"}</span>
+          {latestJob.error && <p className="text-red-600">{latestJob.error}</p>}
+        </div>}
+      </div>
+      <nav className="repository-shortcuts" aria-label="Active repository actions">
+        <Link to="/ask"><MessageSquare size={17} aria-hidden="true" /> Ask about this repository <ArrowUpRight size={14} aria-hidden="true" /></Link>
+        <Link to="/docs"><BookOpen size={17} aria-hidden="true" /> Review documentation <ArrowUpRight size={14} aria-hidden="true" /></Link>
+        <Link to="/findings"><ShieldAlert size={17} aria-hidden="true" /> View findings <ArrowUpRight size={14} aria-hidden="true" /></Link>
+      </nav>
+    </section>}
+
+    {error && <p role="alert" className="notice notice-error">{error}</p>}
+    <div className="repository-layout">
+      <section aria-labelledby="connected-repositories-title" className="min-w-0">
+        <div className="section-heading mb-4">
+          <h2 id="connected-repositories-title">Connected repositories <span className="repository-count">{repos.length}</span></h2>
+          <Button type="button" variant="outline" onClick={() => void refresh()} aria-label="Refresh repositories"><RefreshCw className="h-4 w-4" aria-hidden="true" /></Button>
+        </div>
+        {repos.length === 0 ? <EmptyState icon={<FolderGit2 className="h-6 w-6" aria-hidden="true" />} title="No repositories connected" description="Add a Git URL to start analysis." /> :
+          <ul className="repository-list">
+            {repos.map(repo => {
+              const selected = activeRepo === repo.id
+              return <li key={repo.id} className={selected ? "repository-row is-selected" : "repository-row"}>
+                <div className="repository-row-icon"><FolderGit2 size={20} strokeWidth={1.7} aria-hidden="true" /></div>
+                <div className="repository-row-details">
+                  <h3>{repo.name}</h3>
+                  <p title={repo.remote_url}>{repo.remote_url}</p>
+                  <div className="repository-meta"><span><GitBranch size={13} aria-hidden="true" /> {repo.branch}</span>{repo.commit_sha && <code title={repo.commit_sha}>{repo.commit_sha.slice(0, 8)}</code>}</div>
+                </div>
+                <StatusBadge status={repo.status} />
+                <div className="repository-row-actions">
+                  {(repo.status === "ready" || repo.status === "failed") && <Button variant="outline" disabled={reindexing !== null} onClick={() => void reindexRepo(repo.id)}>{reindexing === repo.id ? "Queuing…" : "Reindex"}</Button>}
+                  <Button variant={selected ? "default" : "outline"} aria-pressed={selected} onClick={() => { localStorage.setItem("weave.repoId", repo.id); setActiveRepo(repo.id) }}>{selected ? "Active" : "Select"}</Button>
+                </div>
+              </li>
+            })}
+          </ul>}
+      </section>
+      {connectPanel}
+    </div>
   </div>
 }

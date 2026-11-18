@@ -146,35 +146,6 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       {retrySeconds > 0 && <p className="mt-2 text-sm" role="status">Continue is available in {retrySeconds} second{retrySeconds === 1 ? "" : "s"}.</p>}
       {review && <section aria-label="Documentation review results" className="mt-4">
         <div className="result-toolbar"><StatusBadge status={review.status} /><ModelBadge model={review.model} /><span className="text-sm">Commit: <code className="code-chip">{review.commit_sha || "Unavailable"}</code></span></div>
-        {review.static_review && <section className="surface-inset mt-4" aria-label="Static review leads">
-          <h3 className="font-medium">Static review leads</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Static checks produce leads, not proof. “Unverified” means static checks could not confirm the claim; it is not an error result.</p>
-          <p className="mt-2 text-sm">{review.static_review.counts.aligned} aligned · {review.static_review.counts.outdated} outdated · {review.static_review.counts.unverified} unverified</p>
-          {review.merged_findings === null && review.static_review.items.map(item => <article key={item.id} className="rounded-md border p-3 mt-3">
-            <span className="rounded bg-muted px-2 py-1 text-xs">{item.status}</span><span className="ml-2 text-xs text-muted-foreground">{item.claim_type}</span>
-            <p className="mt-2 text-sm">Claim: {item.claim}</p><p className="mt-1 text-sm">{item.message}</p>
-            <p className="mt-2 text-xs text-muted-foreground">Documentation: <code>{citation(item.doc)}</code></p>
-            <p className="mt-1 text-xs text-muted-foreground">Code: {item.code ? <code>{citation(item.code)}</code> : "no citation"}</p>
-          </article>)}
-        </section>}
-        {review.merged_findings !== null && <section className="mt-4" aria-label="Merged review findings">
-          <h3 className="font-medium">Findings and supporting evidence</h3>
-          {review.merged_findings.map((group, index) => <article key={`${group.doc.file}:${group.doc.start_line}:${index}`} className="surface-inset mt-3">
-            <p className="text-sm font-medium">{group.claim}</p><p className="mt-1 text-xs text-muted-foreground">Documentation: <code>{citation(group.doc)}</code></p>
-            <div className="mt-3 grid gap-3">{group.evidence.map(entry => entry.origin === "static"
-              ? <div key={`static:${entry.finding.id}`} className="rounded-md border p-3">
-                <p className="text-sm">Static check · {entry.finding.status} · {entry.finding.claim_type}</p><p className="mt-1 text-sm">{entry.finding.message}</p>
-                <p className="mt-2 text-xs text-muted-foreground">Code: {entry.finding.code ? <code>{citation(entry.finding.code)}</code> : "no citation"}</p>
-              </div>
-              : <div key={`ai:${entry.finding.id}`} className="rounded-md border p-3">
-                <p className="text-sm">AI model assessment · {entry.finding.verdict} <span className="text-xs text-muted-foreground">(model assessment, not proof)</span></p><p className="mt-1 text-sm">{entry.finding.explanation}</p>
-                <div className="mt-2 grid gap-1 text-xs text-muted-foreground">{entry.finding.code_citations.length
-                  ? entry.finding.code_citations.map((code, codeIndex) => <p key={`${code.file}:${code.start_line}:${codeIndex}`}>Code: <code>{citation(code)}</code></p>)
-                  : <p>Code: no citations available</p>}</div>
-                {entry.finding.suggested_update && <p className="mt-2 text-sm">Suggested update: {entry.finding.suggested_update}</p>}
-              </div>)}</div>
-          </article>)}
-        </section>}
         {review.reason && <div className={`notice mt-4 ${review.status === "failed" ? "notice-error" : "notice-warning"}`} role="status"><strong>{review.status === "failed" ? "Review stopped" : "Review paused"}</strong><p className="mt-1">{reviewReasonMessage(review.reason)}</p><p className="mt-1">{review.native_progress ? (review.native_progress.claims_assessed === 0 ? "No validated claims assessed yet." : "Saved validated claims are retained.") + " Unfinished files are not complete." : (review.coverage.claims_assessed === 0 ? "No claims assessed yet." : "Assessed claims are retained.") + " Pending sections are not complete."}</p></div>}
         {review.native_progress ? <>
           <div className="metric-grid mt-4"><MetricTile label="Markdown files completed" value={`${review.native_progress.files_completed} / ${review.native_progress.files_total}`} /><MetricTile label="Validated claims" value={review.native_progress.claims_assessed} /><MetricTile label="Files failed" value={<span className={review.native_progress.files_failed ? "text-red-600" : ""}>{review.native_progress.files_failed}</span>} hint={`${review.native_progress.files_pending} pending or in progress`} /></div>
@@ -239,6 +210,35 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
           <p className="font-medium">Some indexed files could not be read and were not reviewed.</p>
           <ul className="mt-1 list-disc pl-5">{review.coverage.unreadable_files.map((file, index) => <li key={`${file}:${index}`}><code>{file}</code></li>)}</ul>
         </div>}
+        {review.static_review && <details className="surface-inset mt-4">
+          <summary className="cursor-pointer font-medium">Static review leads ({review.static_review.items.length})</summary>
+          <p className="mt-1 text-sm text-muted-foreground">Static checks produce leads, not proof. “Unverified” means static checks could not confirm the claim; it is not an error result.</p>
+          <p className="mt-2 text-sm">{review.static_review.counts.aligned} aligned · {review.static_review.counts.outdated} outdated · {review.static_review.counts.unverified} unverified</p>
+          {review.merged_findings === null && review.static_review.items.map(item => <article key={item.id} className="rounded-md border p-3 mt-3">
+            <span className="rounded bg-muted px-2 py-1 text-xs">{item.status}</span><span className="ml-2 text-xs text-muted-foreground">{item.claim_type}</span>
+            <p className="mt-2 text-sm">Claim: {item.claim}</p><p className="mt-1 text-sm">{item.message}</p>
+            <p className="mt-2 text-xs text-muted-foreground">Documentation: <code>{citation(item.doc)}</code></p>
+            <p className="mt-1 text-xs text-muted-foreground">Code: {item.code ? <code>{citation(item.code)}</code> : "no citation"}</p>
+          </article>)}
+        </details>}
+        {review.merged_findings !== null && <details className="surface-inset mt-4">
+          <summary className="cursor-pointer font-medium">Findings and supporting evidence ({review.merged_findings.length})</summary>
+          {review.merged_findings.map((group, index) => <article key={`${group.doc.file}:${group.doc.start_line}:${index}`} className="surface-inset mt-3">
+            <p className="text-sm font-medium">{group.claim}</p><p className="mt-1 text-xs text-muted-foreground">Documentation: <code>{citation(group.doc)}</code></p>
+            <div className="mt-3 grid gap-3">{group.evidence.map(entry => entry.origin === "static"
+              ? <div key={`static:${entry.finding.id}`} className="rounded-md border p-3">
+                <p className="text-sm">Static check · {entry.finding.status} · {entry.finding.claim_type}</p><p className="mt-1 text-sm">{entry.finding.message}</p>
+                <p className="mt-2 text-xs text-muted-foreground">Code: {entry.finding.code ? <code>{citation(entry.finding.code)}</code> : "no citation"}</p>
+              </div>
+              : <div key={`ai:${entry.finding.id}`} className="rounded-md border p-3">
+                <p className="text-sm">AI model assessment · {entry.finding.verdict} <span className="text-xs text-muted-foreground">(model assessment, not proof)</span></p><p className="mt-1 text-sm">{entry.finding.explanation}</p>
+                <div className="mt-2 grid gap-1 text-xs text-muted-foreground">{entry.finding.code_citations.length
+                  ? entry.finding.code_citations.map((code, codeIndex) => <p key={`${code.file}:${code.start_line}:${codeIndex}`}>Code: <code>{citation(code)}</code></p>)
+                  : <p>Code: no citations available</p>}</div>
+                {entry.finding.suggested_update && <p className="mt-2 text-sm">Suggested update: {entry.finding.suggested_update}</p>}
+              </div>)}</div>
+          </article>)}
+        </details>}
         {review.merged_findings === null && review.assessments.length > 0 && <h3 className="mt-5 font-medium">AI model assessments <span className="text-sm font-normal text-muted-foreground">(model assessments, not proof)</span></h3>}
         {review.merged_findings === null && review.assessments.map(item => <article key={item.id} className="surface-inset mt-3">
           <StatusBadge status={item.verdict} />

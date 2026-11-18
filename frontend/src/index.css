@@ -178,3 +178,66 @@
   .sentra-card, .status-badge, .metric-tile, .model-badge { border-color: #94a89a; }
   .eyebrow, .metric-label, .metric-hint, .page-description, .section-heading p { color: #c4d2c7; }
 }
+
+/* Repository workspace */
+@layer components {
+  .workspace-nav { margin-top: 1.6rem; }
+  .workspace-nav-item .sidebar-label { margin: 1.2rem .9rem .45rem; text-transform: uppercase; }
+  .workspace-nav-item:first-child .sidebar-label { margin-top: 0; }
+  .workspace-sidebar { overflow-y: auto; }
+  .workspace-content { padding-top: 2.35rem; }
+  .repo-connect-link {
+    display: inline-flex; align-items: center; gap: .5rem; min-height: 2.65rem;
+    padding: .45rem .85rem; border: 1px solid #45584c; border-radius: .7rem;
+    color: #c3dfce; background: #202d25; font-weight: 600;
+  }
+  .repo-connect-link:hover { background: #2b3c31; }
+  .repository-overview {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, .68fr); gap: clamp(1.25rem, 4vw, 3rem);
+    align-items: center; padding: clamp(1.25rem, 4vw, 2.5rem); border: 1px solid #405047;
+    border-radius: 1.25rem; background: linear-gradient(115deg, #22332a, #171e1a 72%);
+  }
+  .repository-overview-title { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem 1rem; margin: .35rem 0 .65rem; }
+  .repository-overview-title h2 { font-size: clamp(1.65rem, 3vw, 2.5rem); font-weight: 600; line-height: 1.15; letter-spacing: -.045em; overflow-wrap: anywhere; }
+  .repository-meta, .repository-job { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; color: #a9b9ad; font-size: .75rem; }
+  .repository-meta span { display: inline-flex; align-items: center; gap: .3rem; overflow-wrap: anywhere; min-width: 0; }
+  .repository-meta code { color: #abbeaf; }
+  .repository-job { margin-top: 1rem; }
+  .repository-job p { flex-basis: 100%; overflow-wrap: anywhere; }
+  .repository-shortcuts { display: grid; gap: .35rem; }
+  .repository-shortcuts a {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .7rem;
+    padding: .7rem .85rem; border: 1px solid #36473c; border-radius: .65rem; background: #19251eb3;
+    color: #c3d8ca; font-size: .82rem; transition: background-color 140ms, border-color 140ms;
+  }
+  .repository-shortcuts a:hover { background: #2d3f34; border-color: #62816d; }
+  .repository-shortcuts svg { color: #a3c6ae; }
+  .repository-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 21rem); align-items: start; gap: 1.35rem; }
+  .repository-count { color: #a7b9ac; font-size: .78rem; margin-left: .4rem; font-variant-numeric: tabular-nums; }
+  .repository-list { display: grid; gap: .55rem; }
+  .repository-row {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: .7rem .85rem;
+    border: 1px solid #303833; border-radius: .85rem; background: hsl(var(--card)); padding: .95rem;
+  }
+  .repository-row.is-selected { border-color: #587463; background: #19251e; }
+  .repository-row-icon { display: grid; place-items: center; width: 2.45rem; height: 2.45rem; border-radius: .65rem; background: #27352c; color: #a9c9b4; }
+  .repository-row-details { min-width: 0; }
+  .repository-row-details h3 { font-weight: 650; overflow-wrap: anywhere; }
+  .repository-row-details p { font-size: .75rem; color: hsl(var(--muted-foreground)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .repository-row-details .repository-meta { margin-top: .3rem; }
+  .repository-row-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
+  .connect-panel { scroll-margin-top: 9rem; }
+}
+@media (max-width: 1120px) {
+  .repository-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1023px) {
+  .workspace-nav { margin-top: 0; }
+  .workspace-nav-item { flex-shrink: 0; }
+  .workspace-content { padding-top: 1rem; }
+}
+@media (max-width: 620px) {
+  .repository-overview { grid-template-columns: minmax(0, 1fr); }
+  .repository-row { grid-template-columns: auto minmax(0, 1fr); }
+  .repository-row > .status-badge { grid-column: 2; justify-self: start; }
+}
