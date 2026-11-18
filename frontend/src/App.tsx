@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent, type PointerEvent } from "react"
 import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { BookOpen, ChevronRight, FolderGit2, Gauge, GitBranch, GitPullRequest, LockKeyhole, LogOut, MessageSquare, Settings2, Shield, ShieldAlert } from "lucide-react"
 import { api, clearAccessToken, setAccessToken } from "@/lib/api"
@@ -13,6 +13,16 @@ import DocsRouteBoundary from "@/components/docs-error-boundary"
 import { WorkspaceProvider, useWorkspace } from "@/lib/workspace"
 import { StatusBadge } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
+import { LoadingState } from "@/components/ui/loading"
+
+function trackHover(event: PointerEvent<HTMLDivElement>) {
+  if (event.pointerType !== "mouse" || !(event.target instanceof Element)) return
+  const control = event.target.closest<HTMLElement>("[data-pointer-glow]")
+  if (!control) return
+  const bounds = control.getBoundingClientRect()
+  control.style.setProperty("--hover-x", `${event.clientX - bounds.left}px`)
+  control.style.setProperty("--hover-y", `${event.clientY - bounds.top}px`)
+}
 
 const nav = [
   { to: "/", label: "Repositories", icon: FolderGit2 },
@@ -44,10 +54,10 @@ function WorkspaceChrome({ authenticated, logout, children }: { authenticated: b
     return () => { current = false }
   }, [authenticated, repoId])
   const repository = context?.id === repoId ? context : null
-  return <div className={authenticated ? "app-shell" : "auth-shell"}>
+  return <div className={authenticated ? "app-shell" : "auth-shell"} onPointerMove={trackHover}>
     {authenticated && <aside className="workspace-sidebar" aria-label="Workspace sidebar">
       <NavLink to="/" className="brand"><span className="brand-mark"><Shield size={22} strokeWidth={1.8} aria-hidden="true" /></span><span><strong>Weave</strong><small>Repository intelligence</small></span></NavLink>
-      <nav className="workspace-nav" aria-label="Main navigation">{nav.map((item, index) => <div className="workspace-nav-item" key={item.to}>{index === 0 && <p className="sidebar-label">Workspace</p>}{index === 3 && <p className="sidebar-label">Verification</p>}{index === 6 && <p className="sidebar-label">Preferences</p>}<NavLink to={item.to} end={item.to === "/"} className={({ isActive }) => `workspace-nav-link${isActive ? " is-active" : ""}`}><item.icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{item.label}</span><ChevronRight size={13} className="nav-chevron" aria-hidden="true" /></NavLink></div>)}</nav>
+      <nav className="workspace-nav" aria-label="Main navigation">{nav.map((item, index) => <div className="workspace-nav-item" key={item.to}>{index === 0 && <p className="sidebar-label">Workspace</p>}{index === 3 && <p className="sidebar-label">Verification</p>}{index === 6 && <p className="sidebar-label">Preferences</p>}<NavLink to={item.to} end={item.to === "/"} data-pointer-glow="" className={({ isActive }) => `workspace-nav-link${isActive ? " is-active" : ""}`}><item.icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{item.label}</span></NavLink></div>)}</nav>
       <div className="sidebar-footer"><div className="workspace-privacy"><LockKeyhole size={15} aria-hidden="true" /><div><strong>Private workspace</strong></div></div><button onClick={logout} className="signout-button"><LogOut size={15} aria-hidden="true" />Sign out</button></div>
     </aside>}
     <div className={authenticated ? "app-main" : "auth-main"}>
@@ -61,6 +71,7 @@ export default function App() {
   const [token, setToken] = useState("")
   const [authenticated, setAuthenticated] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [signingIn, setSigningIn] = useState(false)
   const [authError, setAuthError] = useState("")
 
   useEffect(() => {
@@ -75,6 +86,8 @@ export default function App() {
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (signingIn) return
+    setSigningIn(true)
     setAuthError("")
     try {
       const session = await api.createSession(token)
@@ -85,7 +98,7 @@ export default function App() {
     } catch {
       clearAccessToken()
       setAuthError("Authentication failed. Check the access token and try again.")
-    }
+    } finally { setSigningIn(false) }
   }
 
   function logout() {
@@ -98,7 +111,7 @@ export default function App() {
     <WorkspaceProvider><BrowserRouter>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <WorkspaceChrome authenticated={authenticated} logout={logout}>
-          {!authenticated ? <section className="sign-in-card sentra-card">
+          {checking ? <LoadingState label="Opening your workspace…" screen /> : !authenticated ? <section className="sign-in-card sentra-card">
             <span className="brand-mark sign-in-mark"><Shield size={30} aria-hidden="true" /></span>
             <p className="eyebrow">YOUR PRIVATE WORKSPACE</p>
             <h1>Clarity for your code.</h1>
@@ -107,7 +120,7 @@ export default function App() {
               <label className="block text-sm font-medium" htmlFor="access-token">Access token</label>
               <input id="access-token" type="password" autoComplete="current-password" value={token} onChange={e => setToken(e.target.value)} required className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
               {authError && <p role="alert" className="notice notice-error">{authError}</p>}
-              <Button disabled={checking} className="w-full">{checking ? "Checking…" : "Open workspace"}<ChevronRight size={16} aria-hidden="true" /></Button>
+              <Button pending={signingIn} className="w-full">{signingIn ? "Signing in…" : <>Open workspace<ChevronRight size={16} aria-hidden="true" /></>}</Button>
             </form>
             <p className="sign-in-footnote"><LockKeyhole size={13} aria-hidden="true" />Only a short-lived session is stored in this tab.</p>
           </section> : <Routes>

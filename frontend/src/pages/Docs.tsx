@@ -48,7 +48,8 @@ export default function Docs() {
   const { repoId, workspace, setWorkspace } = useWorkspace()
   const storedDrift = workspace.driftResult as RepoDrift | null
   const [view, setView] = useState<"review" | "alignment" | "summaries">("review")
-  const [busy, setBusy] = useState(false)
+  const [working, setWorking] = useState<"summaries" | "alignment" | "passage" | null>(null)
+  const busy = working !== null
   const [error, setError] = useState("")
   const [behavioral, setBehavioral] = useState(false)
   const [clockNow, setClockNow] = useState(() => Date.now())
@@ -61,7 +62,7 @@ export default function Docs() {
   const staleDrift = !!(drift?.commit_sha && currentCommit && drift.commit_sha !== currentCommit)
   const canContinue = result !== null && ["rate_limited", "provider_unavailable", "budget_exhausted"].includes(result.status)
   const generated = result?.generated ?? result?.docs?.filter(doc => doc.doc !== undefined && doc.cached !== true).length
-  const docsButtonLabel = busy ? "Working…" : canContinue ? "Continue documentation" : "Generate documentation"
+  const docsButtonLabel = working === "summaries" ? "Generating…" : canContinue ? "Continue documentation" : "Generate documentation"
 
   useEffect(() => {
     if (!repoId) return
@@ -91,7 +92,7 @@ export default function Docs() {
 
   async function generate() {
     if (!repoId) return
-    setBusy(true); setError("")
+    setWorking("summaries"); setError("")
     try {
       const docs = parseDocsResult(await api.post<unknown>(`/repos/${repoId}/docs`, { limit: 10, force: false }))
       const nextRetryUntil = docsRetryDeadline(Date.now(), docs.retry_after_seconds)
@@ -99,12 +100,12 @@ export default function Docs() {
       if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, docsResult: { repoId, result: docs, retryUntil: nextRetryUntil } satisfies RepoDocs }))
     }
     catch (e) { setError(e instanceof Error ? e.message : "Documentation generation failed") }
-    finally { setBusy(false) }
+    finally { setWorking(null) }
   }
 
   async function checkDrift(offset = 0) {
     if (!repoId) return
-    setBusy(true); setError("")
+    setWorking(offset > 0 ? "passage" : "alignment"); setError("")
     try {
       const next = await api.post<DriftResult>(`/repos/${repoId}/drift`, {
         behavioral,
@@ -114,7 +115,7 @@ export default function Docs() {
       if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, driftResult: { repoId, result: next } satisfies RepoDrift }))
     }
     catch (e) { setError(e instanceof Error ? e.message : "Alignment check failed") }
-    finally { setBusy(false) }
+    finally { setWorking(null) }
   }
 
   if (!repoId) return <EmptyState title="Select a repository first" description="Choose one on the Repos page before generating docs or checking alignment." />
@@ -126,14 +127,14 @@ export default function Docs() {
       <button type="button" aria-pressed={view === "alignment"} onClick={() => setView("alignment")}>Alignment</button>
       <button type="button" aria-pressed={view === "summaries"} onClick={() => setView("summaries")}>Code summaries</button>
     </div>
-    <div hidden={view !== "review"}><DocumentationReviewCard key={repoId} repoId={repoId} /></div>
-    <div hidden={view !== "summaries"}><Card>
+    <div className="workspace-panel" hidden={view !== "review"}><DocumentationReviewCard key={repoId} repoId={repoId} /></div>
+    <div className="workspace-panel" hidden={view !== "summaries"}><Card>
       <CardHeader>
         <CardTitle>Code unit summaries</CardTitle>
         <CardDescription>Generate summaries for up to ten code units per batch. Larger units are reviewed in overlapping sections. This is separate from the documentation-first review above. The configured model provider receives the selected source code.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Button onClick={() => void generate()} disabled={busy || retryRemaining > 0}>{docsButtonLabel}</Button>
+        <Button onClick={() => void generate()} pending={working === "summaries"} disabled={busy || retryRemaining > 0}>{docsButtonLabel}</Button>
         {retryRemaining > 0 && <p className="mt-2 text-sm" role="status">Wait {retryRemaining} second{retryRemaining === 1 ? "" : "s"} before generating again.</p>}
         {canContinue && <p className="mt-2 text-sm" role="status">
           {generated === 1 ? "1 new summary was generated." : generated !== undefined ? `${generated} new summaries were generated.` : "Some documentation units could not be completed."} Saved units are retained; continuing resumes unfinished units.
@@ -150,12 +151,12 @@ export default function Docs() {
         </article>)}
       </CardContent>
     </Card></div>
-    <div hidden={view !== "alignment"}><Card><CardHeader><CardTitle>Docs &amp; code alignment</CardTitle><CardDescription>This independent supported-rule scan checks HTTP status, environment defaults, and FastAPI request body field claims against indexed source code. Its checked and unverified counts are updated only by this scan, not by the documentation-first review or code unit summaries.</CardDescription></CardHeader><CardContent>
+    <div className="workspace-panel" hidden={view !== "alignment"}><Card><CardHeader><CardTitle>Docs &amp; code alignment</CardTitle><CardDescription>This independent supported-rule scan checks HTTP status, environment defaults, and FastAPI request body field claims against indexed source code. Its checked and unverified counts are updated only by this scan, not by the documentation-first review or code unit summaries.</CardDescription></CardHeader><CardContent>
       <label className="mb-3 flex items-start gap-2 text-sm">
         <input type="checkbox" checked={behavioral} disabled={busy} onChange={event => setBehavioral(event.target.checked)} />
         Include AI behavioral review. Selected documentation and code excerpts are sent to the configured model provider. Suggestions require review.
       </label>
-      <Button variant="outline" onClick={() => void checkDrift()} disabled={busy}>{busy ? "Checking…" : "Check alignment"}</Button>
+      <Button variant="outline" onClick={() => void checkDrift()} pending={working === "alignment"} disabled={busy}>{working === "alignment" ? "Checking…" : "Check alignment"}</Button>
       {drift && <section aria-label="Alignment results" className="mt-4">
         <p className="text-sm">Commit: <code>{drift.commit_sha ?? "Unavailable"}</code></p>
         {staleDrift && <p className="notice notice-warning mt-3" role="status">These alignment results are from an earlier commit than the current index. Run the supported-rule scan again to check the current commit.</p>}
@@ -171,7 +172,7 @@ export default function Docs() {
         </details>}
         {drift.behavioral_coverage && <div className="mt-2 text-sm">
           <p>AI reviewed {drift.behavioral_coverage.passages_processed} passage(s) in this batch, from {drift.behavioral_coverage.passages_total} indexed passages.</p>
-          {behavioral && drift.behavioral_coverage.next_offset !== null && <Button className="mt-2" variant="outline" disabled={busy || !currentCommit || drift.commit_sha !== currentCommit} onClick={() => void checkDrift(drift.behavioral_coverage!.next_offset!)}>Review next passage</Button>}
+          {behavioral && drift.behavioral_coverage.next_offset !== null && <Button className="mt-2" variant="outline" pending={working === "passage"} disabled={busy || !currentCommit || drift.commit_sha !== currentCommit} onClick={() => void checkDrift(drift.behavioral_coverage!.next_offset!)}>{working === "passage" ? "Reviewing passage…" : "Review next passage"}</Button>}
         </div>}
         {drift.checked === 0 && <p className="mt-3 text-sm text-muted-foreground">
           No claims verified by the supported checks. Unverified references do not establish that documentation is incorrect.

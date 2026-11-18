@@ -4,6 +4,7 @@ import { api } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageIntro, StatusBadge, MetricTile, EmptyState } from "@/components/ui/status"
 import { Dialog } from "@/components/ui/dialog"
+import { LoadingState } from "@/components/ui/loading"
 import { Button } from "@/components/ui/button"
 import { useWorkspace } from "@/lib/workspace"
 
@@ -33,11 +34,13 @@ export default function Findings() {
   }
 
   if (!repoId) return <div className="page-stack"><PageIntro title="Findings" description="Review stored results from code and dependency scans." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view findings." /></div>
-  return <div className="page-stack"><PageIntro title="Findings" description="Review stored results from code and dependency scans."><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void load()}>Refresh</Button><Button onClick={() => void scan()} disabled={busy}>{busy ? "Starting…" : "Run scans"}</Button></div></PageIntro>
+  return <div className="page-stack"><PageIntro title="Findings" description="Review stored results from code and dependency scans."><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void load()}>Refresh</Button><Button onClick={() => void scan()} pending={busy}>{busy ? "Starting…" : "Run scans"}</Button></div></PageIntro>
+    {error && <p role="alert" className="notice notice-error">{error}</p>}
+    {saved?.repoId !== repoId ? !error && <LoadingState label="Loading findings…" /> : <>
     <div className="metric-grid"><MetricTile label="Stored findings" value={items.length} hint="Across available scan results" />{["critical", "high", "medium"].map(severity => <MetricTile key={severity} label={`${severity[0].toUpperCase()}${severity.slice(1)} severity`} value={items.filter(item => item.severity.toLowerCase() === severity).length} hint="Stored findings" />)}</div>
     <div className="section-heading"><div><h2>Scan results</h2><p>Select a finding to review its details and suggested next steps.</p></div></div>
-    {error && <p role="alert" className="notice notice-error">{error}</p>}
     {items.length === 0 ? <Card><CardHeader className="items-center text-center"><div className="mb-2 rounded-full bg-muted p-4"><ShieldAlert className="h-8 w-8 text-muted-foreground" /></div><CardTitle>No findings yet</CardTitle><CardDescription>Run a scan to check code and dependencies.</CardDescription></CardHeader></Card> : items.map(f => <button key={f.id} type="button" onClick={() => setSelected(f)} className="w-full rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"><Card className="transition-colors hover:border-primary"><CardContent className="grid gap-2 p-4"><div className="flex flex-wrap items-center gap-2"><span className="rounded bg-muted px-2 py-1 text-xs uppercase">{f.module}</span><StatusBadge status={f.severity} /><span className="font-medium">{f.source || "Finding"}</span></div><p className="text-sm">{f.explanation}</p><p className="text-xs text-muted-foreground">{f.location?.path}{f.location?.start_line ? `:${f.location.start_line}${f.location.end_line && f.location.end_line !== f.location.start_line ? `–${f.location.end_line}` : ""}` : ""}</p></CardContent></Card></button>)}
+    </>}
     {selected && <Dialog onClose={() => setSelected(null)} labelledBy="finding-detail-title"><div><div className="flex items-start justify-between gap-4"><div><p className="text-xs uppercase text-muted-foreground">{selected.module} · {selected.severity}</p><h2 id="finding-detail-title" className="mt-1 text-lg font-semibold">{selected.source || "Finding details"}</h2></div><button type="button" onClick={() => setSelected(null)} aria-label="Close finding details" className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted">✕</button></div><p className="mt-4 text-sm leading-6">{selected.explanation || "No explanation was provided by the scanner."}</p><p className="mt-3 rounded-md bg-muted p-3 font-mono text-xs">{selected.location?.path || "Unknown file"}{selected.location?.start_line ? `:${selected.location.start_line}${selected.location.end_line ? `-${selected.location.end_line}` : ""}` : ""}</p><h3 className="mt-5 font-semibold">Suggested fix concept</h3><p className="mt-2 text-sm leading-6">{fixConcept(selected)}</p><p className="mt-4 text-xs text-muted-foreground">This is guidance for review, not an automatic code change.</p></div></Dialog>}
   </div>
 }

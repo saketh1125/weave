@@ -3,6 +3,7 @@ import { api } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageIntro, MetricTile, EmptyState } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
+import { LoadingState } from "@/components/ui/loading"
 import { useWorkspace } from "@/lib/workspace"
 
 type ModuleScore = { count: number; raw: number; deduction: number; cap?: number; by_severity: Record<string, number> }
@@ -14,6 +15,7 @@ export default function Score() {
   const saved = workspace.score as { repoId: string; result: ScoreData } | null
   const data = saved?.repoId === repoId ? saved.result : null
   const [error, setError] = useState("")
+  const [snapshotting, setSnapshotting] = useState(false)
   async function load() {
     if (!repoId) return
     try { const score = await api.get<ScoreData>(`/repos/${repoId}/score`); if (localStorage.getItem("weave.repoId") === repoId) { setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })); setError("") } }
@@ -22,13 +24,16 @@ export default function Score() {
   useEffect(() => { void load() }, [repoId])
   async function snapshot() {
     if (!repoId) return
+    setSnapshotting(true); setError("")
     try { const score = await api.post<ScoreData>(`/repos/${repoId}/score`, {}); if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })) }
     catch (e) { if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not save score snapshot") }
+    finally { setSnapshotting(false) }
   }
   if (!repoId) return <div className="page-stack"><PageIntro title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view its readiness score." /></div>
   const weights = data?.config_snapshot?.sev_weight ?? { critical: 10, high: 5, medium: 2, low: 0.5, unknown: 0.5 }
-  return <div className="page-stack"><PageIntro title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps."><Button variant="outline" onClick={() => void snapshot()}>Save snapshot</Button></PageIntro>
+  return <div className="page-stack"><PageIntro title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps."><Button variant="outline" pending={snapshotting} onClick={() => void snapshot()}>{snapshotting ? "Saving snapshot…" : "Save snapshot"}</Button></PageIntro>
     {error && <p role="alert" className="notice notice-error">{error}</p>}
+    {saved?.repoId !== repoId && !error && <LoadingState label="Loading release readiness…" />}
     {data?.stale && <p className="notice">Inputs changed since the saved snapshot. The score below was recalculated from current findings.</p>}
     {data?.analysis_coverage && data.analysis_coverage.status !== "complete" && <p className="notice notice-warning">
       Scan coverage {data.analysis_coverage.status}. Current-revision evidence is missing for {data.analysis_coverage.missing_modules.map(module => moduleNames[module] ?? module).join(", ")}.

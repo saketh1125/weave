@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react"
-import { ChevronLeft, X } from "lucide-react"
+import { Check, ChevronLeft, RotateCcw, X } from "lucide-react"
 import { Dialog } from "@/components/ui/dialog"
 import { api } from "@/lib/api"
 import { StatusBadge, ModelBadge, MetricTile } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
+import { LoadingState } from "@/components/ui/loading"
+import { statusTone } from "@/lib/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview, type DocumentationMergedFinding, type NativeRuntimeActivity } from "@/lib/documentation-review"
 import { INVALID_DOCUMENTATION_DRAFT, parseDocumentationDraft, parseLatestDocumentationDraft, type DocumentationDraft } from "@/lib/documentation-draft"
@@ -59,7 +61,7 @@ function ReviewFindings({ findings }: { findings: DocumentationMergedFinding[] }
         {visible.map(item => {
           const key = findingKey(item)
           const verdict = isConflict(item) ? "conflicting" : item.evidence.some(entry => entry.origin === "ai" ? entry.finding.verdict === "insufficient" : entry.finding.status === "unverified") ? "unverified" : "supported"
-          return <button key={key} type="button" data-selected={selected === key} aria-pressed={selected === key} onClick={event => { trigger.current = event.currentTarget; setSelected(key) }}>
+          return <button key={key} type="button" data-pointer-glow="" data-selected={selected === key} aria-pressed={selected === key} onClick={event => { trigger.current = event.currentTarget; setSelected(key) }}>
             <StatusBadge status={verdict} />
             <strong>{item.claim}</strong>
             <code>{citation(item.doc)}</code>
@@ -92,7 +94,8 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
   const [draft, setDraft] = useState<DocumentationDraft | null>(null)
   const [approvedDraft, setApprovedDraft] = useState<string | null>(null)
   const [publicationBusy, setPublicationBusy] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [working, setWorking] = useState<"start" | "resume" | "draft" | null>(null)
+  const [restoring, setRestoring] = useState(true)
   const [error, setError] = useState("")
   const [pollError, setPollError] = useState("")
   const [retryUntil, setRetryUntil] = useState<number>()
@@ -101,6 +104,9 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
   const polling = useRef(false)
   const retrySeconds = reviewRetryRemaining(retryUntil, now)
   const active = review?.status === "queued" || review?.status === "running"
+  const busy = working !== null
+  const completed = review?.status === "completed"
+  const failed = review?.status === "failed"
   function replaceDraft(next: DocumentationDraft | null) {
     setDraft(next)
     setApprovedDraft(null)
@@ -123,6 +129,8 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       }
     }).catch(e => {
       if (mounted && generation.current === token) setError(e instanceof Error ? e.message : "Could not restore the latest review.")
+    }).finally(() => {
+      if (mounted && generation.current === token) setRestoring(false)
     })
     return () => { mounted = false; generation.current += 1 }
   }, [repoId])
@@ -155,11 +163,11 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
     return () => window.clearInterval(timer)
   }, [retryUntil])
 
-  async function request(path: string, body?: unknown) {
+  async function request(path: string, action: "start" | "resume") {
     const token = generation.current
-    setBusy(true); setError("")
+    setWorking(action); setError("")
     try {
-      const value = body === undefined ? await api.get<unknown>(path) : await api.post<unknown>(path, body)
+      const value = await api.post<unknown>(path, {})
       const parsed = parseDocumentationReview(value)
       if (generation.current !== token) return
       setReview(parsed)
@@ -169,7 +177,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
     } catch (e) {
       if (generation.current === token) setError(e instanceof Error ? e.message : INVALID_DOCUMENTATION_REVIEW)
     } finally {
-      if (generation.current === token) setBusy(false)
+      if (generation.current === token) setWorking(null)
     }
   }
 
@@ -178,10 +186,10 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
   const approvalKey = draft ? `${repoId}:${draft.id}:${draft.draft_hash}` : null
   async function createDraft() {
     if (!review || !canDraft) return
-    setBusy(true); setError(""); setApprovedDraft(null)
+    setWorking("draft"); setError(""); setApprovedDraft(null)
     try { replaceDraft(parseDocumentationDraft(await api.post<unknown>(`${base}/${encodeURIComponent(review.run_id)}/drafts`, review.status === "paused" ? { allow_partial: true } : {}))); setDraftOpen(true) }
     catch (e) { setError(e instanceof Error ? e.message : INVALID_DOCUMENTATION_DRAFT) }
-    finally { setBusy(false) }
+    finally { setWorking(null) }
   }
   async function publishDraft() {
     if (!draft || approvalKey !== approvedDraft || !["draft", "publishing"].includes(draft.status)) return
@@ -206,12 +214,14 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
       <details className="mb-5 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Coverage and content sharing</summary><p className="mt-2 max-w-3xl leading-6">Coverage counts indexed files and validated claims, not every tracked file or factual claim. Starting a review sends selected documentation and code to the configured model connections. Check Settings before starting if you need to choose where that content is shared. The result identifies the review model.</p></details>
       {error && <p role="alert" className="notice notice-error mb-4">{error}</p>}
       {pollError && <p role="alert" className="notice notice-error mb-4">{pollError}</p>}
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => void request(base, {})} disabled={busy || active}>{busy ? "Working…" : "Start review"}</Button>
-        {review?.status === "paused" && <Button variant="outline" disabled={busy || retrySeconds > 0} onClick={() => void request(`${base}/${encodeURIComponent(review.run_id)}/resume`, {})}>Continue review</Button>}
-      </div>
+      {restoring && !review ? <LoadingState label="Loading documentation review…" /> : <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void request(base, "start")} disabled={restoring || busy || publicationBusy} pending={working === "start" || active} tone={completed ? "success" : failed ? "danger" : undefined}>
+          {working === "start" ? "Starting review…" : review?.status === "queued" ? "Review queued" : active ? "Review running" : completed ? <><Check size={14} aria-hidden="true" />Run again</> : failed ? <><RotateCcw size={14} aria-hidden="true" />Retry review</> : "Start review"}
+        </Button>
+        {review?.status === "paused" && <Button variant="outline" tone="warning" pending={working === "resume"} disabled={restoring || busy || publicationBusy || retrySeconds > 0} onClick={() => void request(`${base}/${encodeURIComponent(review.run_id)}/resume`, "resume")}>{working === "resume" ? "Continuing…" : "Continue review"}</Button>}
+      </div>}
       {retrySeconds > 0 && <p className="mt-2 text-sm" role="status">Continue is available in {retrySeconds} second{retrySeconds === 1 ? "" : "s"}.</p>}
-      {review && <section aria-label="Documentation review results" className="mt-4">
+      {review && <section aria-label="Documentation review results" className="mt-4" data-review-tone={statusTone(review.status)}>
         <div className="result-toolbar"><StatusBadge status={review.status} /><ModelBadge model={review.model} /><span className="text-sm">Commit: <code className="code-chip">{review.commit_sha || "Unavailable"}</code></span></div>
         {review.reason && <div className={`notice mt-4 ${review.status === "failed" ? "notice-error" : "notice-warning"}`} role="status"><strong>{review.status === "failed" ? "Review stopped" : "Review paused"}</strong><p className="mt-1">{reviewReasonMessage(review.reason)}</p><p className="mt-1">{review.native_progress ? (review.native_progress.claims_assessed === 0 ? "No validated claims assessed yet." : "Saved validated claims are retained.") + " Unfinished files are not complete." : (review.coverage.claims_assessed === 0 ? "No claims assessed yet." : "Assessed claims are retained.") + " Pending sections are not complete."}</p></div>}
         {review.native_progress ? <>
@@ -304,7 +314,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
           <p className="eyebrow">Review and approval</p><h3 className="font-medium">Documentation update</h3>
           <p className="mt-1 text-sm text-muted-foreground">Create a Markdown-only draft from outdated static matches with code citations or conflicting model assessments. Review the full diff before approving a pull request.</p>
           {review.status === "paused" && <p className="mt-2 text-sm" role="status">This review is incomplete. Only outdated static matches with code citations and conflicting model assessments are included; unverified static leads, other model verdicts, and pending items are not covered.</p>}
-          <Button className="mt-3" variant="outline" disabled={busy || publicationBusy} onClick={() => void createDraft()}>{busy ? "Creating draft…" : "Update documentation"}</Button>
+          <Button className="mt-3" variant="outline" pending={working === "draft"} disabled={restoring || busy || publicationBusy} onClick={() => void createDraft()}>{working === "draft" ? "Creating draft…" : "Update documentation"}</Button>
           {draft && <Button className="mt-3 ml-2" variant="outline" onClick={() => setDraftOpen(true)}>{draft.status === "published" ? "View published draft" : "Review draft"}</Button>}
           {draft && draftOpen && <Dialog labelledBy="review-draft-title" onClose={() => { if (!publicationBusy) setDraftOpen(false) }} wide>
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -323,7 +333,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
             {["draft", "publishing"].includes(draft.status) && draft.review_id === review.run_id && <div className="rounded-xl border bg-card p-4">
               {draft.status === "publishing" && <p className="mb-3 text-sm">A previous request may have created the pull request. Retrying checks for that result before creating anything else.</p>}
               <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={approvedDraft === approvalKey} disabled={publicationBusy} onChange={event => setApprovedDraft(event.target.checked ? approvalKey : null)} /><span>I reviewed this draft diff and approve opening a pull request for this exact draft.</span></label>
-              <Button className="mt-3" disabled={publicationBusy || approvedDraft !== approvalKey} onClick={() => void publishDraft()}>{publicationBusy ? "Opening pull request…" : draft.status === "publishing" ? "Retry opening pull request" : "Open pull request"}</Button>
+              <Button className="mt-3" pending={publicationBusy} disabled={approvedDraft !== approvalKey} onClick={() => void publishDraft()}>{publicationBusy ? "Opening pull request…" : draft.status === "publishing" ? "Retry opening pull request" : "Open pull request"}</Button>
             </div>}
           </div></Dialog>}
         </section>}

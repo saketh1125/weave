@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BookOpen, Check, FolderGit2, GitBranch, MessageSquare, Plus, RefreshCw, ShieldAlert } from "lucide-react"
+import { BookOpen, Check, FolderGit2, GitBranch, MessageSquare, Plus, RefreshCw, RotateCcw, ShieldAlert } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useWorkspace } from "@/lib/workspace"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { LoadingState } from "@/components/ui/loading"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState, PageIntro, StatusBadge } from "@/components/ui/status"
 
@@ -90,7 +91,7 @@ export default function Repos() {
         <form className="grid gap-3" onSubmit={addRepo}>
           <input aria-label="Git repository URL" required type="url" placeholder="https://github.com/owner/repository" value={url} onChange={e => setUrl(e.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
           <input aria-label="Branch" placeholder="Branch" value={branch} onChange={e => setBranch(e.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
-          <Button type="submit" disabled={loading}><Plus className="mr-2 h-4 w-4" />{loading ? "Adding…" : "Add repository"}</Button>
+          <Button type="submit" pending={loading}>{loading ? "Adding…" : <><Plus size={16} aria-hidden="true" />Add repository</>}</Button>
         </form>
       </CardContent>
     </Card>
@@ -130,11 +131,13 @@ export default function Repos() {
           <h2 id="connected-repositories-title">Connected repositories <span className="repository-count">{repos.length}</span></h2>
           <Button type="button" variant="outline" onClick={() => void refresh()} aria-label="Refresh repositories"><RefreshCw className="h-4 w-4" aria-hidden="true" /></Button>
         </div>
-        {loadingRepos ? <p role="status" className="text-sm text-muted-foreground">Loading repositories…</p> : repos.length === 0 ? !error && <EmptyState icon={<FolderGit2 className="h-6 w-6" aria-hidden="true" />} title="No repositories connected" description="Add a Git URL to start analysis." /> :
+        {loadingRepos ? <LoadingState label="Loading repositories…" /> : repos.length === 0 ? !error && <EmptyState icon={<FolderGit2 className="h-6 w-6" aria-hidden="true" />} title="No repositories connected" description="Add a Git URL to start analysis." /> :
           <ul className="repository-list">
             {repos.map(repo => {
               const selected = activeRepo === repo.id
-              return <li key={repo.id} className={selected ? "repository-row is-selected" : "repository-row"}>
+              const failed = repo.status === "failed"
+              const queuing = reindexing === repo.id
+              return <li key={repo.id} data-pointer-glow="" className={selected ? "repository-row is-selected" : "repository-row"}>
                 <div className="repository-row-icon"><FolderGit2 size={20} strokeWidth={1.7} aria-hidden="true" /></div>
                 <div className="repository-row-details">
                   <h3>{repo.name}</h3>
@@ -143,7 +146,7 @@ export default function Repos() {
                 </div>
                 <StatusBadge status={repo.status} />
                 <div className="repository-row-actions">
-                  {(repo.status === "ready" || repo.status === "failed") && <Button variant="outline" disabled={reindexing !== null} onClick={() => void reindexRepo(repo.id)}>{reindexing === repo.id ? "Queuing…" : "Reindex"}</Button>}
+                  {(repo.status === "ready" || failed) && <Button variant="outline" pending={queuing} tone={failed ? "danger" : undefined} disabled={reindexing !== null} onClick={() => void reindexRepo(repo.id)}>{queuing ? "Queuing…" : failed ? <><RotateCcw size={14} aria-hidden="true" />Retry indexing</> : "Reindex"}</Button>}
                   <Button variant={selected ? "default" : "outline"} aria-pressed={selected} onClick={() => selectRepository(repo.id)}>{selected && <Check size={14} aria-hidden="true" />}{selected ? "Active" : "Select"}</Button>
                 </div>
               </li>

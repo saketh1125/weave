@@ -5,6 +5,7 @@ import { api } from "@/lib/api"
 import { reviewReasonMessage } from "@/lib/documentation-review"
 import { changedWorkflows, connectionUnavailable, type ModelSettings, type ModelWorkflows } from "@/lib/model-settings"
 import { Button } from "@/components/ui/button"
+import { LoadingState } from "@/components/ui/loading"
 import { PageIntro, StatusBadge, ModelBadge } from "@/components/ui/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -84,7 +85,7 @@ export default function Settings() {
     <PageIntro title="Model settings" description="Review your connections and choose which model powers each workflow." />
     {error && <p role="alert" className="notice notice-error">{error}</p>}
     {notice && <p role="status" className="notice notice-success">{notice}</p>}
-    {!settings && !error && <p role="status" className="text-sm text-muted-foreground">Loading model settings…</p>}
+    {!settings && !error && <LoadingState label="Loading model settings…" />}
     {settings && selection && <>
       <Card>
         <CardHeader><CardTitle>CLI connections</CardTitle><CardDescription>Set up coding agents on the machine running Weave.</CardDescription></CardHeader>
@@ -122,7 +123,7 @@ export default function Settings() {
       </Dialog>}
       <Card><CardHeader><CardTitle>Connections</CardTitle><CardDescription>Configuration indicates that a connection is present; it does not guarantee a successful live request.</CardDescription></CardHeader><CardContent className="grid gap-3">
         {settings.connections.length === 0 && <p className="text-sm text-muted-foreground">No model connections are available.</p>}
-        {settings.connections.map(connection => <div key={connection.id} className="surface-inset rounded-xl p-4"><div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-medium">{connection.label}</h3><p className="text-sm text-muted-foreground">{connection.adapter} · {connection.model}</p></div><StatusBadge status={connection.configured ? "configured" : "not configured"} label={connection.configured ? "Configured" : "Not configured"} /></div><p className="mt-2 text-xs text-muted-foreground">Capabilities: {connection.capabilities.join(", ") || "None listed"}</p>{connection.adapter !== "antigravity_local" && <div className="mt-3 grid gap-2"><p className="text-xs text-muted-foreground">The test sends an invented prompt and consumes model allowance.</p><div><Button variant="outline" disabled={!!busy} onClick={() => void testApi(connection.id)}>{busy === `api:${connection.id}` ? "Testing…" : "Test API connection"}</Button></div>{apiResults[connection.id] && <p role="status" className="text-sm">{apiResults[connection.id].status === "passed" ? "Connection test passed." : `Connection test failed: ${reviewReasonMessage(apiResults[connection.id].reason || "provider_error")}`}</p>}</div>}</div>)}
+        {settings.connections.map(connection => <div key={connection.id} className="surface-inset rounded-xl p-4"><div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-medium">{connection.label}</h3><p className="text-sm text-muted-foreground">{connection.adapter} · {connection.model}</p></div><StatusBadge status={connection.configured ? "configured" : "not configured"} label={connection.configured ? "Configured" : "Not configured"} /></div><p className="mt-2 text-xs text-muted-foreground">Capabilities: {connection.capabilities.join(", ") || "None listed"}</p>{connection.adapter !== "antigravity_local" && <div className="mt-3 grid gap-2"><p className="text-xs text-muted-foreground">The test sends an invented prompt and consumes model allowance.</p><div><Button variant="outline" pending={busy === `api:${connection.id}`} disabled={!!busy} onClick={() => void testApi(connection.id)}>{busy === `api:${connection.id}` ? "Testing…" : "Test API connection"}</Button></div>{apiResults[connection.id] && <p role="status" className="text-sm">{apiResults[connection.id].status === "passed" ? "Connection test passed." : `Connection test failed: ${reviewReasonMessage(apiResults[connection.id].reason || "provider_error")}`}</p>}</div>}</div>)}
       </CardContent></Card>
       <Card><CardHeader><CardTitle>Workflow routing</CardTitle><CardDescription>Choose a configured connection for each workflow. Antigravity supports Q&A, structured generation, drafts, internal planning, and documentation review. Its runtime profile runs one job at a time, so Q&A is unavailable while a review is running.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
         {workflows.map(workflow => <label key={workflow} className="grid gap-1 text-sm font-medium">{labels[workflow]}<select value={selection[workflow]} disabled={!!busy} onChange={event => setSelection({ ...selection, [workflow]: event.target.value })} className="rounded-md border bg-background px-3 py-2 text-sm font-normal">
@@ -136,9 +137,9 @@ export default function Settings() {
         {workflows.some(workflow => settings.connections.some(connection => connection.id === selection[workflow] && connection.adapter.toLowerCase().startsWith("antigravity"))) && <p className="text-sm text-muted-foreground">To change the model, route every Antigravity workflow elsewhere and save first.</p>}
         <label className="grid max-w-md gap-1 text-sm font-medium">Model<select value={model} disabled={!!busy || !settings.antigravity.enabled || settings.antigravity.models.length === 0 || workflows.some(workflow => settings.connections.some(connection => connection.id === selection[workflow] && connection.adapter.toLowerCase().startsWith("antigravity")))} onChange={event => setModel(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm font-normal"><option value="" disabled>Select a model</option>{settings.antigravity.models.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
         {dirty && <p className="text-sm text-muted-foreground">Save changes before testing the selected model.</p>}
-        <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy || !settings.antigravity.enabled || dirty} onClick={() => void test()}>{busy === "test" ? "Testing…" : "Test connection"}</Button><Button variant="outline" disabled={!!busy || !settings.antigravity.verified || dirty} onClick={() => void testGeneration()}>{busy === "generation" ? "Testing generation…" : "Test generation"}</Button></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" pending={busy === "test"} disabled={!!busy || !settings.antigravity.enabled || dirty} onClick={() => void test()}>{busy === "test" ? "Testing…" : "Test connection"}</Button><Button variant="outline" pending={busy === "generation"} disabled={!!busy || !settings.antigravity.verified || dirty} onClick={() => void testGeneration()}>{busy === "generation" ? "Testing generation…" : "Test generation"}</Button></div>
       </CardContent></Card>
-      <div><Button disabled={!!busy || !dirty} onClick={() => void save()}>{busy === "save" ? "Saving…" : "Save settings"}</Button></div>
+      <div><Button pending={busy === "save"} disabled={!!busy || !dirty} onClick={() => void save()}>{busy === "save" ? "Saving…" : "Save settings"}</Button></div>
     </>}
   </div>
 }
