@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { Terminal, X } from "lucide-react"
+import { Dialog } from "@/components/ui/dialog"
 import { api } from "@/lib/api"
 import { reviewReasonMessage } from "@/lib/documentation-review"
 import { changedWorkflows, connectionUnavailable, type ModelSettings, type ModelWorkflows } from "@/lib/model-settings"
@@ -7,9 +9,18 @@ import { PageIntro, StatusBadge, ModelBadge } from "@/components/ui/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 const labels: Record<keyof ModelWorkflows, string> = { planner: "Planner", reviewer: "Reviewer", draft: "Draft", qa: "Questions and answers", summary: "Documentation summaries", drift: "Documentation drift", pr_summary: "Pull request summaries", pr_qa: "Pull request questions and answers" }
+const cliProviders = [
+  { id: "antigravity", name: "Antigravity CLI", detail: "Local Google runtime" },
+  { id: "codex", name: "Codex CLI", detail: "OpenAI coding agent" },
+  { id: "claude", name: "Claude Code", detail: "Anthropic coding agent" },
+  { id: "opencode", name: "OpenCode", detail: "Local coding agent" },
+] as const
+const antigravityLogin = "python scripts/test_antigravity_local.py --login"
 const workflows = Object.keys(labels) as (keyof ModelWorkflows)[]
 
 export default function Settings() {
+  const [connecting, setConnecting] = useState<(typeof cliProviders)[number] | null>(null)
+  const [copyStatus, setCopyStatus] = useState("")
   const [settings, setSettings] = useState<ModelSettings | null>(null)
   const [selection, setSelection] = useState<ModelWorkflows | null>(null)
   const [model, setModel] = useState("")
@@ -75,6 +86,40 @@ export default function Settings() {
     {notice && <p role="status" className="notice notice-success">{notice}</p>}
     {!settings && !error && <p role="status" className="text-sm text-muted-foreground">Loading model settings…</p>}
     {settings && selection && <>
+      <Card>
+        <CardHeader><CardTitle>CLI connections</CardTitle><CardDescription>Set up coding agents on the machine running Weave.</CardDescription></CardHeader>
+        <CardContent>
+          <ul className="connection-list">
+            {cliProviders.map(provider => {
+              const connected = provider.id === "antigravity" && settings.antigravity.enabled && settings.antigravity.verified
+              return <li key={provider.id} className="connection-row">
+                <Terminal size={17} aria-hidden="true" />
+                <div><h3>{provider.name}</h3><p>{provider.detail}</p></div>
+                {connected ? <StatusBadge status="verified" label="Connected" /> :
+                  <Button variant="outline" aria-label={`Connect ${provider.name}`} onClick={() => { setCopyStatus(""); setConnecting(provider) }}>Connect</Button>}
+              </li>
+            })}
+          </ul>
+        </CardContent>
+      </Card>
+      {connecting && <Dialog labelledBy="cli-connect-title" onClose={() => setConnecting(null)}>
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="card-title" id="cli-connect-title">Connect {connecting.name}</h2>
+          <button type="button" aria-label="Close connection setup" className="icon-control" onClick={() => setConnecting(null)}><X size={17} aria-hidden="true" /></button>
+        </div>
+        {connecting.id === "antigravity" ? <>
+          <p className="mt-2 text-sm text-muted-foreground">Run this command from the Weave project folder on the host and complete sign-in in your terminal. Then test the connection here.</p>
+          <pre className="surface-inset mt-4 overflow-x-auto text-xs"><code>{antigravityLogin}</code></pre>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="outline" onClick={async () => {
+              try { await navigator.clipboard.writeText(antigravityLogin); setCopyStatus("Command copied.") }
+              catch { setCopyStatus("Copy the command from the box above.") }
+            }}>Copy command</Button>
+            <Button disabled={!!busy || dirty || !settings.antigravity.enabled} onClick={() => { setConnecting(null); void test() }}>Test connection</Button>
+          </div>
+          <p role="status" className="mt-2 text-sm text-muted-foreground">{copyStatus || (!settings.antigravity.enabled ? "Enable the local bridge before testing." : dirty ? "Save model settings before testing." : "")}</p>
+        </> : <p className="mt-2 text-sm text-muted-foreground">In-app sign-in for {connecting.name} will be available when its local connector is implemented.</p>}
+      </Dialog>}
       <Card><CardHeader><CardTitle>Connections</CardTitle><CardDescription>Configuration indicates that a connection is present; it does not guarantee a successful live request.</CardDescription></CardHeader><CardContent className="grid gap-3">
         {settings.connections.length === 0 && <p className="text-sm text-muted-foreground">No model connections are available.</p>}
         {settings.connections.map(connection => <div key={connection.id} className="surface-inset rounded-xl p-4"><div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-medium">{connection.label}</h3><p className="text-sm text-muted-foreground">{connection.adapter} · {connection.model}</p></div><StatusBadge status={connection.configured ? "configured" : "not configured"} label={connection.configured ? "Configured" : "Not configured"} /></div><p className="mt-2 text-xs text-muted-foreground">Capabilities: {connection.capabilities.join(", ") || "None listed"}</p>{connection.adapter !== "antigravity_local" && <div className="mt-3 grid gap-2"><p className="text-xs text-muted-foreground">The test sends an invented prompt and consumes model allowance.</p><div><Button variant="outline" disabled={!!busy} onClick={() => void testApi(connection.id)}>{busy === `api:${connection.id}` ? "Testing…" : "Test API connection"}</Button></div>{apiResults[connection.id] && <p role="status" className="text-sm">{apiResults[connection.id].status === "passed" ? "Connection test passed." : `Connection test failed: ${reviewReasonMessage(apiResults[connection.id].reason || "provider_error")}`}</p>}</div>}</div>)}

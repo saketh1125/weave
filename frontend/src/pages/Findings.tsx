@@ -10,8 +10,7 @@ import { useWorkspace } from "@/lib/workspace"
 type Finding = { id: string; module: string; severity: string; source?: string; explanation?: string; location?: { path?: string; start_line?: number; end_line?: number }; detail?: Record<string, unknown> }
 
 export default function Findings() {
-  const repoId = localStorage.getItem("weave.repoId")
-  const { workspace, setWorkspace } = useWorkspace()
+  const { repoId, workspace, setWorkspace } = useWorkspace()
   const saved = workspace.findings[0] as { repoId: string; result: Finding[] } | undefined
   const items = saved?.repoId === repoId ? saved.result : []
   const refreshTimer = useRef<number | undefined>(undefined)

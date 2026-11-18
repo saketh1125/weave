@@ -24,5 +24,5 @@ test("the empty model placeholder cannot be selected", () => {
 
 test("draft review directs users to compare replacements with cited evidence", () => {
   assert.match(review, /Compare each proposed replacement against its cited source before approval/)
-  assert.match(review, /Review the findings and citations above/)
+  assert.match(review, /Review the findings and citations in Docs & Drift/)
 })

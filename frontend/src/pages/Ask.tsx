@@ -10,12 +10,11 @@ type Citation = { id: number; file: string; qualified_name: string; start_line: 
 type Answer = { answer: string | null; citations: Citation[]; model: string; llm_model?: string | null; generation_error?: string | null }
 
 export default function Ask() {
-  const { workspace, setWorkspace } = useWorkspace()
+  const { repoId, workspace, setWorkspace } = useWorkspace()
   const question = workspace.askQuestion
   const saved = workspace.askResult as { repoId: string; result: Answer } | null
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const repoId = localStorage.getItem("weave.repoId")
   const result = saved?.repoId === repoId ? saved.result : null
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {

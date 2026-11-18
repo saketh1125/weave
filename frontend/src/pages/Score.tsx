@@ -10,8 +10,7 @@ type ScoreData = { score: number; label: string; deduction?: number; breakdown: 
 const moduleNames: Record<string, string> = { m2: "Static analysis", m4: "Dependency vulnerabilities", m5: "Pull request risk", m6: "Documentation drift", other: "Other findings" }
 
 export default function Score() {
-  const repoId = localStorage.getItem("weave.repoId")
-  const { workspace, setWorkspace } = useWorkspace()
+  const { repoId, workspace, setWorkspace } = useWorkspace()
   const saved = workspace.score as { repoId: string; result: ScoreData } | null
   const data = saved?.repoId === repoId ? saved.result : null
   const [error, setError] = useState("")

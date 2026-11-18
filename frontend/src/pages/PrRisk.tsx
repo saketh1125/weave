@@ -11,8 +11,7 @@ type Review = { number: number; title: string; url: string; head_sha?: string; c
 type PrAnswer = { answer: string | null; model?: string | null; status: string; message?: string }
 
 export default function PrRisk() {
-  const repoId = localStorage.getItem("weave.repoId")
-  const { workspace, setWorkspace } = useWorkspace()
+  const { repoId, workspace, setWorkspace } = useWorkspace()
   const url = workspace.prUrl
   const storedReview = workspace.prReview as { repoId: string; result: Review } | null
   const review = storedReview?.repoId === repoId ? storedReview.result : null
@@ -24,7 +23,7 @@ export default function PrRisk() {
     event.preventDefault()
     if (!repoId) return
     setBusy(true); setError("")
-    try { const next = await api.post<Review>(`/repos/${repoId}/pr-review`, { pr_url: url, summarize: true }); setWorkspace(previous => ({ ...previous, prReview: { repoId, result: next }, prAnswer: null, prQuestion: "" })) }
+    try { const next = await api.post<Review>(`/repos/${repoId}/pr-review`, { pr_url: url, summarize: true }); if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, prReview: { repoId, result: next }, prAnswer: null, prQuestion: "" })) }
     catch (e) { setError(e instanceof Error ? e.message : "Could not review this pull request") }
     finally { setBusy(false) }
   }
@@ -32,7 +31,7 @@ export default function PrRisk() {
     event.preventDefault()
     if (!repoId || !review || !question.trim()) return
     setBusy(true); setError("")
-    try { const next = await api.post<PrAnswer>(`/repos/${repoId}/pr-review/${review.number}/ask`, { question }); setWorkspace(previous => ({ ...previous, prAnswer: next })) }
+    try { const next = await api.post<PrAnswer>(`/repos/${repoId}/pr-review/${review.number}/ask`, { question }); if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, prAnswer: next })) }
     catch (e) { setError(e instanceof Error ? e.message : "Could not answer this PR question") }
     finally { setBusy(false) }
   }

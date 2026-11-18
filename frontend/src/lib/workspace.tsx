@@ -14,6 +14,8 @@ export type Workspace = {
 }
 
 type WorkspaceContextValue = {
+  repoId: string | null
+  selectRepository: (id: string) => void
   workspace: Workspace
   setWorkspace: Dispatch<SetStateAction<Workspace>>
 }
@@ -27,7 +29,14 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState(initial)
-  return <WorkspaceContext.Provider value={{ workspace, setWorkspace }}>{children}</WorkspaceContext.Provider>
+  const [repoId, setRepoId] = useState(() => localStorage.getItem("weave.repoId"))
+  function selectRepository(id: string) {
+    if (id === repoId) return
+    localStorage.setItem("weave.repoId", id)
+    setRepoId(id)
+    setWorkspace(initial)
+  }
+  return <WorkspaceContext.Provider value={{ repoId, selectRepository, workspace, setWorkspace }}>{children}</WorkspaceContext.Provider>
 }
 
 export function useWorkspace() {

@@ -45,14 +45,14 @@ function CitationView({ label, citation }: { label: string; citation: Citation }
 }
 
 export default function Docs() {
-  const { workspace, setWorkspace } = useWorkspace()
+  const { repoId, workspace, setWorkspace } = useWorkspace()
   const storedDrift = workspace.driftResult as RepoDrift | null
+  const [view, setView] = useState<"review" | "alignment" | "summaries">("review")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [behavioral, setBehavioral] = useState(false)
   const [clockNow, setClockNow] = useState(() => Date.now())
   const [indexedCommit, setIndexedCommit] = useState<{ repoId: string; sha: string | null } | null>(null)
-  const repoId = localStorage.getItem("weave.repoId")
   const { result, retryUntil, invalid: invalidStoredDocs } = readStoredDocs(workspace.docsResult, repoId)
   const retryRemaining = docsRetryRemainingSeconds(retryUntil, clockNow)
   const countdownActive = retryRemaining > 0
@@ -96,7 +96,7 @@ export default function Docs() {
       const docs = parseDocsResult(await api.post<unknown>(`/repos/${repoId}/docs`, { limit: 10, force: false }))
       const nextRetryUntil = docsRetryDeadline(Date.now(), docs.retry_after_seconds)
       setClockNow(Date.now())
-      setWorkspace(previous => ({ ...previous, docsResult: { repoId, result: docs, retryUntil: nextRetryUntil } satisfies RepoDocs }))
+      if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, docsResult: { repoId, result: docs, retryUntil: nextRetryUntil } satisfies RepoDocs }))
     }
     catch (e) { setError(e instanceof Error ? e.message : "Documentation generation failed") }
     finally { setBusy(false) }
@@ -111,7 +111,7 @@ export default function Docs() {
         passage_offset: offset,
         expected_commit: offset > 0 ? drift?.commit_sha : undefined,
       })
-      setWorkspace(previous => ({ ...previous, driftResult: { repoId, result: next } satisfies RepoDrift }))
+      if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, driftResult: { repoId, result: next } satisfies RepoDrift }))
     }
     catch (e) { setError(e instanceof Error ? e.message : "Alignment check failed") }
     finally { setBusy(false) }
@@ -121,8 +121,13 @@ export default function Docs() {
   return <div className="page-stack">
     <PageIntro eyebrow="Repository intelligence" title="Documentation" description="Review documentation against your code, explore summaries, and check alignment." />
     {(error || invalidStoredDocs) && <p role="alert" className="notice notice-error">{error || INVALID_DOCS_RESPONSE}</p>}
-    <DocumentationReviewCard key={repoId} repoId={repoId} />
-    <Card>
+    <div className="view-switch" role="group" aria-label="Documentation views">
+      <button type="button" aria-pressed={view === "review"} onClick={() => setView("review")}>Review</button>
+      <button type="button" aria-pressed={view === "alignment"} onClick={() => setView("alignment")}>Alignment</button>
+      <button type="button" aria-pressed={view === "summaries"} onClick={() => setView("summaries")}>Code summaries</button>
+    </div>
+    <div hidden={view !== "review"}><DocumentationReviewCard key={repoId} repoId={repoId} /></div>
+    <div hidden={view !== "summaries"}><Card>
       <CardHeader>
         <CardTitle>Code unit summaries</CardTitle>
         <CardDescription>Generate summaries for up to ten code units per batch. Larger units are reviewed in overlapping sections. This is separate from the documentation-first review above. The configured model provider receives the selected source code.</CardDescription>
@@ -144,8 +149,8 @@ export default function Docs() {
           {doc.context_complete === false && <p className="mt-1 text-xs text-muted-foreground">This summary covers part of the code unit. Its remaining source exceeded the per-unit review limit.</p>}
         </article>)}
       </CardContent>
-    </Card>
-    <Card><CardHeader><CardTitle>Docs &amp; code alignment</CardTitle><CardDescription>This independent supported-rule scan checks HTTP status, environment defaults, and FastAPI request body field claims against indexed source code. Its checked and unverified counts are updated only by this scan, not by the documentation-first review or code unit summaries.</CardDescription></CardHeader><CardContent>
+    </Card></div>
+    <div hidden={view !== "alignment"}><Card><CardHeader><CardTitle>Docs &amp; code alignment</CardTitle><CardDescription>This independent supported-rule scan checks HTTP status, environment defaults, and FastAPI request body field claims against indexed source code. Its checked and unverified counts are updated only by this scan, not by the documentation-first review or code unit summaries.</CardDescription></CardHeader><CardContent>
       <label className="mb-3 flex items-start gap-2 text-sm">
         <input type="checkbox" checked={behavioral} disabled={busy} onChange={event => setBehavioral(event.target.checked)} />
         Include AI behavioral review. Selected documentation and code excerpts are sent to the configured model provider. Suggestions require review.
@@ -189,6 +194,6 @@ export default function Docs() {
           </div>
         </article>)}</div>}
       </section>}
-    </CardContent></Card>
+    </CardContent></Card></div>
   </div>
 }

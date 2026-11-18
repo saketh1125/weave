@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { BrowserRouter, NavLink, Route, Routes, useLocation } from "react-router-dom"
-import { BookOpen, ChevronRight, FolderGit2, Gauge, GitPullRequest, LockKeyhole, LogOut, MessageSquare, Settings2, Shield, ShieldAlert } from "lucide-react"
+import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from "react-router-dom"
+import { BookOpen, ChevronRight, FolderGit2, Gauge, GitBranch, GitPullRequest, LockKeyhole, LogOut, MessageSquare, Settings2, Shield, ShieldAlert } from "lucide-react"
 import { api, clearAccessToken, setAccessToken } from "@/lib/api"
 import Findings from "@/pages/Findings"
 import PrRisk from "@/pages/PrRisk"
@@ -10,7 +10,7 @@ import Ask from "@/pages/Ask"
 import Docs from "@/pages/Docs"
 import Settings from "@/pages/Settings"
 import DocsRouteBoundary from "@/components/docs-error-boundary"
-import { WorkspaceProvider } from "@/lib/workspace"
+import { WorkspaceProvider, useWorkspace } from "@/lib/workspace"
 import { StatusBadge } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
 
@@ -33,6 +33,17 @@ function HealthBadge() {
 function WorkspaceChrome({ authenticated, logout, children }: { authenticated: boolean; logout: () => void; children: React.ReactNode }) {
   const location = useLocation()
   const current = nav.find(item => item.to === location.pathname)
+  const { repoId } = useWorkspace()
+  const [context, setContext] = useState<{ id: string; name: string; branch: string } | null>(null)
+  useEffect(() => {
+    if (!authenticated || !repoId) return
+    let current = true
+    void api.get<{ name: string; branch: string }>(`/repos/${encodeURIComponent(repoId)}`).then(repo => {
+      if (current) setContext({ id: repoId, name: repo.name, branch: repo.branch })
+    }).catch(() => { if (current) setContext(null) })
+    return () => { current = false }
+  }, [authenticated, repoId])
+  const repository = context?.id === repoId ? context : null
   return <div className={authenticated ? "app-shell" : "auth-shell"}>
     {authenticated && <aside className="workspace-sidebar" aria-label="Workspace sidebar">
       <NavLink to="/" className="brand"><span className="brand-mark"><Shield size={22} strokeWidth={1.8} aria-hidden="true" /></span><span><strong>Weave</strong><small>Repository intelligence</small></span></NavLink>
@@ -40,7 +51,7 @@ function WorkspaceChrome({ authenticated, logout, children }: { authenticated: b
       <div className="sidebar-footer"><div className="workspace-privacy"><LockKeyhole size={15} aria-hidden="true" /><div><strong>Private workspace</strong></div></div><button onClick={logout} className="signout-button"><LogOut size={15} aria-hidden="true" />Sign out</button></div>
     </aside>}
     <div className={authenticated ? "app-main" : "auth-main"}>
-      <header className="workspace-toolbar">{authenticated ? <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13} aria-hidden="true" /><strong>{current?.label ?? "Weave"}</strong></div> : <span className="auth-brand"><Shield size={20} aria-hidden="true" /> Weave</span>}<div className="toolbar-actions"><HealthBadge />{authenticated && <button className="mobile-signout" onClick={logout} aria-label="Sign out"><LogOut size={16} aria-hidden="true" /></button>}</div></header>
+      <header className="workspace-toolbar">{authenticated ? <div className="breadcrumb"><Link to="/" className="toolbar-repository"><FolderGit2 size={14} aria-hidden="true" /><span>{repository?.name || (repoId ? "Repository" : "Select repository")}</span></Link><ChevronRight size={13} aria-hidden="true" /><strong>{current?.label ?? "Weave"}</strong>{repository?.branch && <span className="toolbar-branch"><GitBranch size={13} aria-hidden="true" />{repository.branch}</span>}</div> : <span className="auth-brand"><Shield size={20} aria-hidden="true" /> Weave</span>}<div className="toolbar-actions"><HealthBadge />{authenticated && <button className="mobile-signout" onClick={logout} aria-label="Sign out"><LogOut size={16} aria-hidden="true" /></button>}</div></header>
       <main id="main-content" className={authenticated ? "workspace-content" : "auth-content"}>{children}</main>
     </div>
   </div>

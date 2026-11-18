@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react"
+import { ChevronLeft, X } from "lucide-react"
+import { Dialog } from "@/components/ui/dialog"
 import { api } from "@/lib/api"
 import { StatusBadge, ModelBadge, MetricTile } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview, type NativeRuntimeActivity } from "@/lib/documentation-review"
+import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview, type DocumentationMergedFinding, type NativeRuntimeActivity } from "@/lib/documentation-review"
 import { INVALID_DOCUMENTATION_DRAFT, parseDocumentationDraft, parseLatestDocumentationDraft, type DocumentationDraft } from "@/lib/documentation-draft"
 
 function citation(c: { file: string; start_line: number; end_line: number }) {
@@ -20,8 +22,73 @@ function NativeActivity({ label, activity }: { label: string; activity: NativeRu
   </div>
 }
 
+function findingKey(group: DocumentationMergedFinding) {
+  return JSON.stringify([group.doc.file, group.doc.start_line, group.doc.end_line, group.claim])
+}
+
+function isConflict(group: DocumentationMergedFinding) {
+  return group.evidence.some(entry => entry.origin === "ai" ? entry.finding.verdict === "conflicting" : entry.finding.status === "outdated")
+}
+
+function ReviewFindings({ findings }: { findings: DocumentationMergedFinding[] }) {
+  const [filter, setFilter] = useState<"conflicts" | "all">("conflicts")
+  const [selected, setSelected] = useState<string | null>(null)
+  const trigger = useRef<HTMLButtonElement | null>(null)
+  const detail = useRef<HTMLElement>(null)
+  const conflicts = findings.filter(isConflict)
+  const visible = filter === "all" ? findings : conflicts
+  const group = visible.find(item => findingKey(item) === selected)
+  useEffect(() => {
+    if (group && window.matchMedia("(max-width: 700px)").matches) detail.current?.focus()
+  }, [selected, !!group])
+  function backToList() {
+    setSelected(null)
+    requestAnimationFrame(() => trigger.current?.focus())
+  }
+  return <section className="review-findings mt-5" aria-label="Findings and supporting evidence">
+    <div className="review-findings-header">
+      <h3>Findings and supporting evidence</h3>
+      <div className="view-switch" role="group" aria-label="Filter findings">
+        <button aria-pressed={filter === "conflicts"} onClick={() => { setFilter("conflicts"); setSelected(null) }}>Conflicts <span>{conflicts.length}</span></button>
+        <button aria-pressed={filter === "all"} onClick={() => { setFilter("all"); setSelected(null) }}>All <span>{findings.length}</span></button>
+      </div>
+    </div>
+    <div className={`review-split${group ? " has-selection" : ""}`}>
+      <div className="review-finding-list">
+        {visible.length === 0 && <p className="p-4 text-sm text-muted-foreground">{filter === "conflicts" ? "No conflicts recorded." : "No findings recorded yet."}</p>}
+        {visible.map(item => {
+          const key = findingKey(item)
+          const verdict = isConflict(item) ? "conflicting" : item.evidence.some(entry => entry.origin === "ai" ? entry.finding.verdict === "insufficient" : entry.finding.status === "unverified") ? "unverified" : "supported"
+          return <button key={key} type="button" data-selected={selected === key} aria-pressed={selected === key} onClick={event => { trigger.current = event.currentTarget; setSelected(key) }}>
+            <StatusBadge status={verdict} />
+            <strong>{item.claim}</strong>
+            <code>{citation(item.doc)}</code>
+          </button>
+        })}
+      </div>
+      {group ? <article ref={detail} tabIndex={-1} className="review-finding-detail" aria-label="Selected finding">
+        <button className="finding-back" onClick={backToList}><ChevronLeft size={16} aria-hidden="true" /> Back to findings</button>
+            <p className="text-sm font-medium">{group.claim}</p><p className="mt-1 text-xs text-muted-foreground">Documentation: <code>{citation(group.doc)}</code></p>
+            <div className="mt-3 grid gap-3">{group.evidence.map(entry => entry.origin === "static"
+              ? <div key={`static:${entry.finding.id}`} className="rounded-md border p-3">
+                <p className="text-sm">Static check · {entry.finding.status} · {entry.finding.claim_type}</p><p className="mt-1 text-sm">{entry.finding.message}</p>
+                <p className="mt-2 text-xs text-muted-foreground">Code: {entry.finding.code ? <code>{citation(entry.finding.code)}</code> : "no citation"}</p>
+              </div>
+              : <div key={`ai:${entry.finding.id}`} className="rounded-md border p-3">
+                <p className="text-sm">AI model assessment · {entry.finding.verdict} <span className="text-xs text-muted-foreground">(model assessment, not proof)</span></p><p className="mt-1 text-sm">{entry.finding.explanation}</p>
+                <div className="mt-2 grid gap-1 text-xs text-muted-foreground">{entry.finding.code_citations.length
+                  ? entry.finding.code_citations.map((code, codeIndex) => <p key={`${code.file}:${code.start_line}:${codeIndex}`}>Code: <code>{citation(code)}</code></p>)
+                  : <p>Code: no citations available</p>}</div>
+                {entry.finding.suggested_update && <p className="mt-2 text-sm">Suggested update: {entry.finding.suggested_update}</p>}
+              </div>)}</div>
+      </article> : <p className="review-finding-placeholder">Select a finding to inspect its evidence.</p>}
+    </div>
+  </section>
+}
+
 export default function DocumentationReviewCard({ repoId }: { repoId: string }) {
   const [review, setReview] = useState<DocumentationReview | null>(null)
+  const [draftOpen, setDraftOpen] = useState(false)
   const [draft, setDraft] = useState<DocumentationDraft | null>(null)
   const [approvedDraft, setApprovedDraft] = useState<string | null>(null)
   const [publicationBusy, setPublicationBusy] = useState(false)
@@ -112,7 +179,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
   async function createDraft() {
     if (!review || !canDraft) return
     setBusy(true); setError(""); setApprovedDraft(null)
-    try { replaceDraft(parseDocumentationDraft(await api.post<unknown>(`${base}/${encodeURIComponent(review.run_id)}/drafts`, review.status === "paused" ? { allow_partial: true } : {}))) }
+    try { replaceDraft(parseDocumentationDraft(await api.post<unknown>(`${base}/${encodeURIComponent(review.run_id)}/drafts`, review.status === "paused" ? { allow_partial: true } : {}))); setDraftOpen(true) }
     catch (e) { setError(e instanceof Error ? e.message : INVALID_DOCUMENTATION_DRAFT) }
     finally { setBusy(false) }
   }
@@ -221,24 +288,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
             <p className="mt-1 text-xs text-muted-foreground">Code: {item.code ? <code>{citation(item.code)}</code> : "no citation"}</p>
           </article>)}
         </details>}
-        {review.merged_findings !== null && <details className="surface-inset mt-4">
-          <summary className="cursor-pointer font-medium">Findings and supporting evidence ({review.merged_findings.length})</summary>
-          {review.merged_findings.map((group, index) => <article key={`${group.doc.file}:${group.doc.start_line}:${index}`} className="surface-inset mt-3">
-            <p className="text-sm font-medium">{group.claim}</p><p className="mt-1 text-xs text-muted-foreground">Documentation: <code>{citation(group.doc)}</code></p>
-            <div className="mt-3 grid gap-3">{group.evidence.map(entry => entry.origin === "static"
-              ? <div key={`static:${entry.finding.id}`} className="rounded-md border p-3">
-                <p className="text-sm">Static check · {entry.finding.status} · {entry.finding.claim_type}</p><p className="mt-1 text-sm">{entry.finding.message}</p>
-                <p className="mt-2 text-xs text-muted-foreground">Code: {entry.finding.code ? <code>{citation(entry.finding.code)}</code> : "no citation"}</p>
-              </div>
-              : <div key={`ai:${entry.finding.id}`} className="rounded-md border p-3">
-                <p className="text-sm">AI model assessment · {entry.finding.verdict} <span className="text-xs text-muted-foreground">(model assessment, not proof)</span></p><p className="mt-1 text-sm">{entry.finding.explanation}</p>
-                <div className="mt-2 grid gap-1 text-xs text-muted-foreground">{entry.finding.code_citations.length
-                  ? entry.finding.code_citations.map((code, codeIndex) => <p key={`${code.file}:${code.start_line}:${codeIndex}`}>Code: <code>{citation(code)}</code></p>)
-                  : <p>Code: no citations available</p>}</div>
-                {entry.finding.suggested_update && <p className="mt-2 text-sm">Suggested update: {entry.finding.suggested_update}</p>}
-              </div>)}</div>
-          </article>)}
-        </details>}
+        {review.merged_findings !== null && <ReviewFindings key={review.run_id} findings={review.merged_findings} />}
         {review.merged_findings === null && review.assessments.length > 0 && <h3 className="mt-5 font-medium">AI model assessments <span className="text-sm font-normal text-muted-foreground">(model assessments, not proof)</span></h3>}
         {review.merged_findings === null && review.assessments.map(item => <article key={item.id} className="surface-inset mt-3">
           <StatusBadge status={item.verdict} />
@@ -255,11 +305,18 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
           <p className="mt-1 text-sm text-muted-foreground">Create a Markdown-only draft from outdated static matches with code citations or conflicting model assessments. Review the full diff before approving a pull request.</p>
           {review.status === "paused" && <p className="mt-2 text-sm" role="status">This review is incomplete. Only outdated static matches with code citations and conflicting model assessments are included; unverified static leads, other model verdicts, and pending items are not covered.</p>}
           <Button className="mt-3" variant="outline" disabled={busy || publicationBusy} onClick={() => void createDraft()}>{busy ? "Creating draft…" : "Update documentation"}</Button>
-          {draft && <div className="mt-4 grid gap-3">
+          {draft && <Button className="mt-3 ml-2" variant="outline" onClick={() => setDraftOpen(true)}>{draft.status === "published" ? "View published draft" : "Review draft"}</Button>}
+          {draft && draftOpen && <Dialog labelledBy="review-draft-title" onClose={() => { if (!publicationBusy) setDraftOpen(false) }} wide>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="card-title" id="review-draft-title">Review documentation draft</h3>
+              <button className="icon-control" aria-label="Close draft review" disabled={publicationBusy} onClick={() => setDraftOpen(false)}><X size={17} aria-hidden="true" /></button>
+            </div>
+            {error && <p role="alert" className="notice notice-error mb-3">{error}</p>}
+            <div className="grid gap-3">
             {draft.review_id !== review.run_id && <p role="alert" className="text-sm text-red-600">This saved draft belongs to a different review and cannot be approved here.</p>}
             <div className="result-toolbar"><StatusBadge status={draft.status} /><span className="text-sm">Base commit: <code className="code-chip">{draft.base_commit}</code></span></div>
             <p className="text-sm">Changed files: {draft.files.map(file => file.path).join(", ")}</p>
-            <p className="text-sm">Compare each proposed replacement against its cited source before approval. Review the findings and citations above.</p>
+            <p className="text-sm">Compare each proposed replacement against its cited source before approval. Review the findings and citations in Docs & Drift.</p>
             <details open className="rounded-xl border bg-card p-4"><summary className="cursor-pointer text-sm font-medium">Unified diff</summary><pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs">{draft.diff}</pre></details>
             <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer text-sm font-medium">Markdown draft preview</summary>{draft.files.map(file => <article key={file.path} className="mt-3"><h4 className="text-sm font-medium">{file.path}</h4><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-3 text-xs">{file.content}</pre></article>)}</details>
             {draft.status === "published" && draft.pr_url && <p role="status" className="text-sm">Pull request opened: <a className="underline" href={draft.pr_url} target="_blank" rel="noopener noreferrer">{draft.pr_url}</a></p>}
@@ -268,7 +325,7 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
               <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={approvedDraft === approvalKey} disabled={publicationBusy} onChange={event => setApprovedDraft(event.target.checked ? approvalKey : null)} /><span>I reviewed this draft diff and approve opening a pull request for this exact draft.</span></label>
               <Button className="mt-3" disabled={publicationBusy || approvedDraft !== approvalKey} onClick={() => void publishDraft()}>{publicationBusy ? "Opening pull request…" : draft.status === "publishing" ? "Retry opening pull request" : "Open pull request"}</Button>
             </div>}
-          </div>}
+          </div></Dialog>}
         </section>}
       </section>}
     </CardContent>

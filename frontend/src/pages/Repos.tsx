@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowUpRight, BookOpen, FolderGit2, GitBranch, MessageSquare, Plus, RefreshCw, ShieldAlert } from "lucide-react"
+import { BookOpen, Check, FolderGit2, GitBranch, MessageSquare, Plus, RefreshCw, ShieldAlert } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useWorkspace } from "@/lib/workspace"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +13,7 @@ type Job = { id: string; kind: string; status: string; attempts: number; error?:
 
 export default function Repos() {
   const [repos, setRepos] = useState<Repo[]>([])
+  const [loadingRepos, setLoadingRepos] = useState(true)
   const [url, setUrl] = useState("")
   const [branch, setBranch] = useState("main")
   const [loading, setLoading] = useState(false)
@@ -19,7 +21,7 @@ export default function Repos() {
   const [error, setError] = useState("")
   const [savedJob, setLatestJob] = useState<{ repoId: string; job: Job } | null>(null)
   const requestId = useRef(0)
-  const [activeRepo, setActiveRepo] = useState(() => localStorage.getItem("weave.repoId") ?? "")
+  const { repoId: activeRepo, selectRepository } = useWorkspace()
 
   const selectedRepo = repos.find(repo => repo.id === activeRepo)
   const latestJob = savedJob?.repoId === activeRepo ? savedJob.job : null
@@ -28,6 +30,7 @@ export default function Repos() {
     const id = ++requestId.current
     try { const next = await api.repos.list() as Repo[]; if (id === requestId.current) { setRepos(next); setError("") } }
     catch (e) { if (id === requestId.current) setError(e instanceof Error ? e.message : "Could not load repositories") }
+    finally { if (id === requestId.current) setLoadingRepos(false) }
   }, [])
 
   useEffect(() => { void refresh(); return () => { requestId.current++ } }, [refresh])
@@ -44,12 +47,13 @@ export default function Repos() {
     let cancelled = false
     let sequence = 0
     setLatestJob(null)
-    if (!activeRepo) return
-    async function loadJob() {
+    const repoId = activeRepo
+    if (!repoId) return
+    const loadJob = async () => {
       const id = ++sequence
       try {
-        const jobs = await api.get<Job[]>(`/repos/${activeRepo}/jobs`)
-        if (!cancelled && id === sequence) setLatestJob(jobs[0] ? { repoId: activeRepo, job: jobs[0] } : null)
+        const jobs = await api.get<Job[]>(`/repos/${encodeURIComponent(repoId)}/jobs`)
+        if (!cancelled && id === sequence) setLatestJob(jobs[0] ? { repoId, job: jobs[0] } : null)
       } catch { /* Repository status remains available if job details cannot be loaded. */ }
     }
     void loadJob()
@@ -97,7 +101,7 @@ export default function Repos() {
 
     {selectedRepo && <section className="repository-overview" aria-labelledby="active-repository-title">
       <div className="repository-overview-content">
-        <p className="eyebrow">Active repository</p>
+        <p className="eyebrow">Selected repository</p>
         <div className="repository-overview-title">
           <h2 id="active-repository-title">{selectedRepo.name}</h2>
           <StatusBadge status={selectedRepo.status} />
@@ -108,14 +112,14 @@ export default function Repos() {
         </div>
         {latestJob && <div className="repository-job">
           <span>Latest {latestJob.kind} job</span><StatusBadge status={latestJob.status} />
-          <span>{latestJob.attempts} attempt{latestJob.attempts === 1 ? "" : "s"}</span>
+
           {latestJob.error && <p className="text-red-600">{latestJob.error}</p>}
         </div>}
       </div>
       <nav className="repository-shortcuts" aria-label="Active repository actions">
-        <Link to="/ask"><MessageSquare size={17} aria-hidden="true" /> Ask about this repository <ArrowUpRight size={14} aria-hidden="true" /></Link>
-        <Link to="/docs"><BookOpen size={17} aria-hidden="true" /> Review documentation <ArrowUpRight size={14} aria-hidden="true" /></Link>
-        <Link to="/findings"><ShieldAlert size={17} aria-hidden="true" /> View findings <ArrowUpRight size={14} aria-hidden="true" /></Link>
+        <Link to="/ask"><MessageSquare size={17} aria-hidden="true" /> Ask</Link>
+        <Link to="/docs"><BookOpen size={17} aria-hidden="true" /> Review docs</Link>
+        <Link to="/findings"><ShieldAlert size={17} aria-hidden="true" /> View findings</Link>
       </nav>
     </section>}
 
@@ -126,7 +130,7 @@ export default function Repos() {
           <h2 id="connected-repositories-title">Connected repositories <span className="repository-count">{repos.length}</span></h2>
           <Button type="button" variant="outline" onClick={() => void refresh()} aria-label="Refresh repositories"><RefreshCw className="h-4 w-4" aria-hidden="true" /></Button>
         </div>
-        {repos.length === 0 ? <EmptyState icon={<FolderGit2 className="h-6 w-6" aria-hidden="true" />} title="No repositories connected" description="Add a Git URL to start analysis." /> :
+        {loadingRepos ? <p role="status" className="text-sm text-muted-foreground">Loading repositories…</p> : repos.length === 0 ? !error && <EmptyState icon={<FolderGit2 className="h-6 w-6" aria-hidden="true" />} title="No repositories connected" description="Add a Git URL to start analysis." /> :
           <ul className="repository-list">
             {repos.map(repo => {
               const selected = activeRepo === repo.id
@@ -140,7 +144,7 @@ export default function Repos() {
                 <StatusBadge status={repo.status} />
                 <div className="repository-row-actions">
                   {(repo.status === "ready" || repo.status === "failed") && <Button variant="outline" disabled={reindexing !== null} onClick={() => void reindexRepo(repo.id)}>{reindexing === repo.id ? "Queuing…" : "Reindex"}</Button>}
-                  <Button variant={selected ? "default" : "outline"} aria-pressed={selected} onClick={() => { localStorage.setItem("weave.repoId", repo.id); setActiveRepo(repo.id) }}>{selected ? "Active" : "Select"}</Button>
+                  <Button variant={selected ? "default" : "outline"} aria-pressed={selected} onClick={() => selectRepository(repo.id)}>{selected && <Check size={14} aria-hidden="true" />}{selected ? "Active" : "Select"}</Button>
                 </div>
               </li>
             })}
