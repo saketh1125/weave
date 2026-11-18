@@ -159,3 +159,165 @@ def test_failure_cancels_other_inflight_reviewers():
     with pytest.raises(workflow.ACPError, match='remote request failed'):
         asyncio.run(workflow.exercise(client, 'm', 60, read))
     assert client.cancelled
+
+
+def test_planner_monitor_does_not_emit_plan_without_agents():
+    class Client:
+        def __init__(self):
+            self.submitted = False
+            self.observed = asyncio.Event()
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': params['mcpServers'][0]['url'], 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            if method == 'session/prompt' and params['sessionId'].endswith('planner'):
+                self.submitted = True
+                await asyncio.wait_for(self.observed.wait(), 1)
+    client = Client()
+    async def read(endpoint):
+        if endpoint == 'planner':
+            if client.submitted:
+                client.observed.set()
+                return {'plan': {'version': 2, 'assignments': [['a.md']], 'static_triage': False}}
+            return {'plan': None}
+        return {'reviewer': 1, 'files': [{'path': 'a.md', 'status': 'completed'}], 'finished': True}
+    updates = []
+    asyncio.run(workflow.exercise(client, 'm', 60, read, lambda state, *_: updates.append(state)))
+    assert any(update['plan'] is not None for update in updates)
+    assert all(update['plan'] is None or len(update['agents']) == len(update['plan']['assignments']) for update in updates)
+
+
+def test_reviewer_can_continue_past_three_turns_and_reports_activity():
+    class Client:
+        def __init__(self): self.turns = 0
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            if method == 'session/prompt':
+                self.turns += 1
+                return {'stopReason': 'max_tokens'}
+    client = Client()
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md']]}}
+        return {'files': [], 'finished': client.turns >= 4}
+    result, _, _ = asyncio.run(workflow.exercise(client, 'm', 60, read, max_prompt_calls=4))
+    assert client.turns == 4
+    assert result['agents'][0]['runtime_activity']['prompt_turns'] == 4
+    assert result['agents'][0]['runtime_activity']['phase'] == 'finished'
+
+
+def test_unchanged_end_turns_stop_with_explicit_category():
+    class Client:
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            return {'stopReason': 'end_turn'}
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md']]}}
+        return {'files': [], 'finished': False}
+    with pytest.raises(workflow.ACPError) as error:
+        asyncio.run(workflow.exercise(Client(), 'm', 60, read))
+    assert error.value.category == 'no_progress'
+
+
+def test_activity_counter_changes_do_not_count_as_review_progress():
+    class Client:
+        def __init__(self): self.turns = 0
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            if method == 'session/prompt':
+                self.turns += 1
+                return {'stopReason': 'end_turn'}
+    client = Client()
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md']]}}
+        return {'files': [{'path': 'a.md', 'status': 'pending', 'assessments': []}], 'read_ranges': [], 'finished': False,
+                'activity': {'steps': client.turns, 'errors': client.turns},
+                'runtime_activity': {'events': client.turns, 'prompt_turns': client.turns}}
+    with pytest.raises(workflow.ACPError) as error:
+        asyncio.run(workflow.exercise(client, 'm', 60, read))
+    assert error.value.category == 'no_progress' and client.turns == 3
+
+
+def test_source_range_growth_counts_as_review_progress():
+    class Client:
+        def __init__(self): self.turns = 0
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            if method == 'session/prompt':
+                self.turns += 1
+                return {'stopReason': 'end_turn'}
+    client = Client()
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md']]}}
+        ranges = [{'path': 'code.py', 'start_line': 1, 'end_line': n} for n in range(1, client.turns + 1)]
+        return {'files': [{'path': 'a.md', 'status': 'pending', 'assessments': []}], 'read_ranges': ranges,
+                'finished': client.turns >= 4, 'activity': {'steps': client.turns, 'errors': 0}}
+    result, _, _ = asyncio.run(workflow.exercise(client, 'm', 60, read, max_prompt_calls=4))
+    assert client.turns == 4 and result['agents'][0]['finished'] is True
+
+
+def test_parallel_lanes_get_initial_turn_before_continuations():
+    class Client:
+        def __init__(self): self.calls = []
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': params['mcpServers'][0]['url'], 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            if method == 'session/prompt':
+                self.calls.append(params['sessionId'])
+                return {'stopReason': 'max_tokens'}
+    client = Client()
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md'], ['b.md']]}}
+        return {'files': [], 'finished': False}
+    with pytest.raises(workflow.ACPError) as error:
+        asyncio.run(workflow.exercise(client, 'm', 60, read, max_prompt_calls=2))
+    assert error.value.category == 'budget_exhausted'
+    assert len(client.calls) == 2 and len(set(client.calls)) == 2
+
+
+def test_refusal_stops_without_consuming_remaining_budget():
+    class Client:
+        def __init__(self): self.prompts = 0
+        async def request(self, method, params):
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+            self.prompts += 1
+            return {'stopReason': 'refusal'}
+    client = Client()
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md']]}}
+        return {'files': [], 'finished': False}
+    with pytest.raises(workflow.ACPError) as error:
+        asyncio.run(workflow.exercise(client, 'm', 60, read))
+    assert error.value.category == 'refusal' and client.prompts == 1
+
+
+def test_sessions_select_default_mode_when_offered_and_prompts_restrict_tools():
+    class Client:
+        def __init__(self): self.calls = []
+        async def request(self, method, params):
+            self.calls.append((method, params))
+            if method == 'initialize': return {'protocolVersion': 1}
+            if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]},
+                {'id': 'mode', 'currentValue': 'other', 'options': [{'value': 'default'}]}]}
+    async def read(endpoint):
+        if endpoint == 'planner': return {'plan': {'assignments': [['a.md']]}}
+        return {'files': [], 'finished': True}
+    client = Client()
+    asyncio.run(workflow.exercise(client, 'm', 60, read))
+    assert any(method == 'session/set_config_option' and params['configId'] == 'mode' and params['value'] == 'default'
+               for method, params in client.calls)
+    for prompt in (workflow.PLANNER, workflow.REVIEWER, workflow.TRIAGE):
+        assert 'only the provided sentra MCP tools' in prompt
+        assert 'native agent delegation' in prompt
+    assert 'submit_plan is the Weave reviewer allocation mechanism; call it directly' in workflow.PLANNER

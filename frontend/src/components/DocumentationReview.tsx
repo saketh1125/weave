@@ -3,11 +3,21 @@ import { api } from "@/lib/api"
 import { StatusBadge, ModelBadge, MetricTile } from "@/components/ui/status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview } from "@/lib/documentation-review"
+import { INVALID_DOCUMENTATION_REVIEW, canCreateDocumentationDraft, parseDocumentationReview, parseLatestDocumentationReview, reviewRetryDeadline, reviewRetryRemaining, reviewReasonMessage, type DocumentationReview, type NativeRuntimeActivity } from "@/lib/documentation-review"
 import { INVALID_DOCUMENTATION_DRAFT, parseDocumentationDraft, parseLatestDocumentationDraft, type DocumentationDraft } from "@/lib/documentation-draft"
 
 function citation(c: { file: string; start_line: number; end_line: number }) {
   return `${c.file}:${c.start_line}${c.end_line === c.start_line ? "" : `–${c.end_line}`}`
+}
+
+function NativeActivity({ label, activity }: { label: string; activity: NativeRuntimeActivity }) {
+  return <div className="text-sm">
+    <p><strong>{label}:</strong> {activity.phase.replaceAll("_", " ")} · {activity.prompt_turns} prompt turns · {activity.events} native events</p>
+    <p className="text-xs text-muted-foreground">Last native event: {activity.last_event_at === null ? "not recorded" : new Date(activity.last_event_at * 1000).toLocaleString()}
+      {activity.last_stop_reason && ` · Stop: ${activity.last_stop_reason.replaceAll("_", " ")}`}</p>
+    {(activity.permission_requests !== undefined || activity.permission_denials !== undefined) &&
+      <p className="text-xs text-muted-foreground">Tool permission requests: {activity.permission_requests ?? 0} · denied: {activity.permission_denials ?? 0}</p>}
+  </div>
 }
 
 export default function DocumentationReviewCard({ repoId }: { repoId: string }) {
@@ -172,6 +182,17 @@ export default function DocumentationReviewCard({ repoId }: { repoId: string }) 
             <div className="flex flex-wrap justify-between gap-2 text-sm"><strong>Native review progress</strong><span>{review.native_progress.files_completed} completed · {review.native_progress.files_pending} pending or in progress · {review.native_progress.files_failed} failed</span></div>
             <div className="progress-track mt-2" role="progressbar" aria-label="Markdown files completed" aria-valuemin={0} aria-valuemax={review.native_progress.files_total || 1} aria-valuenow={review.native_progress.files_completed}><div className="progress-fill" style={{ width: `${review.native_progress.files_total ? Math.min(100, review.native_progress.files_completed / review.native_progress.files_total * 100) : 0}%` }} /></div>
             <p className="mt-2 text-xs text-muted-foreground">Phase: {review.native_progress.phase === "static_checks" ? "Static checks" : review.native_progress.phase}</p>
+            {review.native_progress.runtime && <div className="mt-3 grid gap-2 rounded-md border p-3" aria-label="Native runtime activity">
+              <strong className="text-sm">Native runtime activity</strong>
+              {review.native_progress.runtime.planner && <NativeActivity label="Planner" activity={review.native_progress.runtime.planner} />}
+              {review.native_progress.agents.map(agent => {
+                const runtime = review.native_progress?.runtime?.agents.find(item => item.reviewer === agent.reviewer)
+                return <div key={agent.reviewer}>
+                  {runtime && <NativeActivity label={`Reviewer ${agent.reviewer}`} activity={runtime.activity} />}
+                  {agent.mcp_activity && <p className="text-xs text-muted-foreground">Reviewer {agent.reviewer} MCP tool calls: {agent.mcp_activity.steps} · errors: {agent.mcp_activity.errors} · claims recorded: {agent.mcp_activity.claims_recorded}</p>}
+                </div>
+              })}
+            </div>}
             <div className="mt-3 grid gap-3">{review.native_progress.agents.map(agent => <section key={agent.reviewer} className="rounded-md border p-3" aria-label={`Reviewer agent ${agent.reviewer}`}>
               <strong className="text-sm">Reviewer agent {agent.reviewer}</strong>
               {agent.files.length ? <ul className="mt-2 grid gap-1 text-sm">{agent.files.map(file => <li key={file.path} className="flex flex-wrap justify-between gap-2"><code>{file.path}</code><span>{file.status} · {file.claims_assessed} validated claims</span></li>)}</ul> : <p className="mt-1 text-sm text-muted-foreground">No Markdown files assigned.</p>}

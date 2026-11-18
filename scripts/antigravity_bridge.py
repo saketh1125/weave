@@ -17,15 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import test_antigravity_local as runner
 from scripts import antigravity_workflow as workflow_runner
+from scripts import native_generation as generation_runner
 from app.acp_transport import ACPError
 
 MAX_BODY = 50 * 1024 * 1024
 
 
+class AgentBusy(ValueError):
+    pass
+
+
 def runtime_identity():
     files = [Path(__file__), ROOT / "scripts/test_antigravity_local.py", ROOT / "app/acp_transport.py",
         ROOT / "app/documentation/assessment.py", ROOT / "app/documentation/native_plan.py",
-        ROOT / "scripts/antigravity_workflow.py"]
+        ROOT / "scripts/antigravity_workflow.py", ROOT / "scripts/native_generation.py"]
     files += sorted((ROOT / "deployment/antigravity").glob("*"))
     digest = hashlib.sha256(b"antigravity-native-1.5.8-acp-v1")
     for path in files:
@@ -65,15 +70,20 @@ class Bridge:
     def start(self, payload):
         if runtime_identity() != self.identity:
             raise ValueError("restart required")
-        if not isinstance(payload, dict) or set(payload) - {"kind", "model", "identity", "job", "context", "deadline_seconds", "snapshot", "documentation_files", "plan", "completed_files", "reviewed_claims", "max_prompt_calls", "static_review", "completed_triage_ids"}:
+        if not isinstance(payload, dict) or set(payload) - {"kind", "model", "identity", "job", "context", "deadline_seconds", "snapshot", "documentation_files", "plan", "completed_files", "reviewed_claims", "max_prompt_calls", "static_review", "completed_triage_ids", "messages", "tools", "response_format", "force_assessment", "max_tokens", "timeout_seconds"}:
             raise ValueError("invalid job")
         kind, model = payload.get("kind"), payload.get("model")
-        if kind not in {"test", "review", "workflow"} or (model is not None and (not isinstance(model, str) or len(model) > 200)):
+        if kind not in {"test", "review", "workflow", "generate"} or (model is not None and (not isinstance(model, str) or len(model) > 200)):
             raise ValueError("invalid job")
         deadline = payload.get("deadline_seconds")
         if ((kind in {"review", "workflow"} and (type(deadline) is not int or not 60 <= deadline <= 900))
                 or (kind == "test" and "deadline_seconds" in payload)):
             raise ValueError("invalid deadline")
+        if kind == 'generate':
+            try:
+                generation_runner.validate_request(payload)
+            except (ValueError, TypeError, KeyError, generation_runner.jsonschema.exceptions.SchemaError):
+                raise ValueError('invalid generation request') from None
         budget = payload.get('max_prompt_calls', 18)
         if kind == 'workflow' and (type(budget) is not int or not 1 <= budget <= 100):
             raise ValueError('invalid prompt budget')
@@ -85,8 +95,8 @@ class Bridge:
                 raise ValueError('invalid workflow inventory')
         with self.lock:
             if any(not job["future"].done() for job in self.jobs.values()):
-                raise ValueError("local runner busy")
-            if kind in {"review", "workflow"} and (payload.get("identity") != self.identity or not self.state["verified"]
+                raise AgentBusy("local runner busy")
+            if kind in {"review", "workflow", "generate"} and (payload.get("identity") != self.identity or not self.state["verified"]
                     or model != self.state["selected_model"]):
                 raise ValueError("review connection is not verified")
             # Retain no old source/results after a caller disappears.
@@ -144,6 +154,8 @@ class Bridge:
         try:
             if payload["kind"] == "test":
                 report = await runner.run(model=payload.get("model"))
+            elif payload['kind'] == 'generate':
+                report = await generation_runner.run(payload)
             elif payload['kind'] == 'workflow':
                 report = await workflow_runner.run(payload['snapshot'], payload['documentation_files'],
                     payload.get('model'), payload['deadline_seconds'], on_progress, plan=payload.get('plan'),
@@ -180,8 +192,9 @@ class Bridge:
             auth = report.get("rpcErrorCode") == -32000
             state = {"identity": self.identity, "models": models,
                 "selected_model": selected if selected in models else None, "verified": success,
-                "status": "passed" if success else "authentication_required" if auth else "failed",
+                "status": "passed" if success else "model_limit_reported" if report.get("category") == "model_limit_reported" else "authentication_required" if auth else "failed",
                 "message": "Live documentation fixture passed." if success else
+                    "The native runtime reported a model usage limit. Check the model allowance before retrying." if report.get("category") == "model_limit_reported" else
                     "Complete native Antigravity setup in the server terminal, then test again." if auth else
                     "The native review did not pass. Check the local runtime and provider availability."}
             with self.lock:
@@ -271,8 +284,10 @@ class Handler(BaseHTTPRequestHandler):
             if len(raw) != size:
                 raise ValueError()
             self.send(200, self.server.bridge.start(json.loads(raw)))
+        except AgentBusy:
+            self.send(409, {"status": "agent_busy"})
         except (ValueError, OSError):
-            self.send(400, {"status": "invalid_or_busy", "message": "Invalid request or local runner busy."})
+            self.send(400, {"status": "invalid_request"})
 
 
 def main():

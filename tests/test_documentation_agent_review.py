@@ -155,6 +155,26 @@ def test_review_response_exposes_safe_activity_without_inflating_completed_count
     assert 'not public' not in json.dumps(result)
 
 
+def test_native_review_projects_allowlisted_runtime_and_mcp_activity():
+    from types import SimpleNamespace
+    from app.routers.documentation import render
+    runtime = {'events': 3, 'last_event_at': 1_800_000_000, 'phase': 'tool_running', 'prompt_turns': 2,
+        'last_stop_reason': None, 'permission_requests': 1, 'permission_denials': 1, 'raw_text': 'private'}
+    run = SimpleNamespace(id='run', job_id=None, commit_sha='abc', status='running', model='m', reason=None,
+        manifest={'documentation_files': ['README.md'], 'unreadable_files': [], 'scope': 'indexed',
+            'model_settings': {'workflow': 'file_agents_v1'}, 'native_plan': {'assignments': [['README.md']]},
+            'native_runtime': {'planner': {**runtime, 'phase': 'finished'}, 'agents': [{'reviewer': 1, **runtime}]}})
+    task = SimpleNamespace(status='pending', path='README.md', start_line=1, end_line=4, assessments=[],
+        state={'activity': {'steps': 4, 'errors': 1, 'claims_recorded': 0, 'updated_at': 1_800_000_001, 'private': 'omit'}})
+    result = render(run, [task])
+    progress = result['native_progress']
+    assert progress['agents'][0]['files'][0]['status'] == 'pending'
+    assert progress['agents'][0]['mcp_activity'] == {'steps': 4, 'errors': 1, 'claims_recorded': 0, 'updated_at': 1_800_000_001}
+    assert progress['runtime'] == {'planner': {key: value for key, value in runtime.items() if key != 'raw_text'} | {'phase': 'finished'},
+        'agents': [{'reviewer': 1, 'activity': {key: value for key, value in runtime.items() if key != 'raw_text'}}]}
+    assert 'private' not in json.dumps(result)
+
+
 def test_resumed_claims_are_deduplicated_by_documented_claim_and_citation():
     from app.documentation.service import merge_assessments
     revised = {**ASSESSMENT, 'rationale': 'More direct evidence.'}
@@ -253,3 +273,18 @@ def test_persisted_legacy_agent_sections_resume_without_planner(monkeypatch):
                 await session.commit()
             await engine.dispose()
     asyncio.run(exercise())
+
+
+def test_completed_native_run_projects_finished_triage_for_older_checkpoints():
+    from types import SimpleNamespace
+    from app.routers.documentation import render
+    items = [{'id': str(i), 'status': 'unverified', 'claim': 'A claim.', 'doc': {'file': 'a.md', 'start_line': 1, 'end_line': 1}} for i in range(2)]
+    run = SimpleNamespace(id='r', job_id=None, commit_sha='abc', status='completed', model='m', reason=None,
+        manifest={'documentation_files': ['a.md'], 'unreadable_files': [], 'scope': 'indexed',
+                  'model_settings': {'workflow': 'file_agents_v1'},
+                  'native_plan': {'assignments': [['a.md']], 'static_triage': True},
+                  'static_review': {'items': items, 'counts': {'unverified': 2}}})
+    task = SimpleNamespace(path='a.md', status='completed', state={}, assessments=[], start_line=1, end_line=1)
+    progress = render(run, [task])['native_progress']
+    assert progress['triage']['status'] == 'completed'
+    assert progress['triage']['findings_processed'] == progress['triage']['findings_total'] == 2

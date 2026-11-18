@@ -30,11 +30,47 @@ def validate_ranges(ranges, snapshot):
             raise ValueError('invalid_agent_result')
 
 
+TOOL_ERROR_CODES = frozenset('''step_limit_reached already_finished invalid_tool_arguments unknown_tool
+invalid_arguments read_assigned_markdown_first invalid_plan plan_already_submitted
+bulk_documentation_too_large_use_read_markdown documentation_path_not_assigned
+invalid_line_range documentation_line_range_not_found documentation_line_exceeds_16_kb
+documentation_result_too_large static_finding_too_large finding_evidence_mismatch
+finding_not_assigned_or_already_processed assessment_validation_failed finish_requires_all_findings
+finish_requires_all_files finish_requires_assessment_or_no_claims_without_errors
+documentation_path_not_assigned_or_finished assessment_limit_reached result_output_limit'''.split())
+
+
 def validate_activity(activity):
-    if not isinstance(activity, dict):
+    if not isinstance(activity, dict) or set(activity) - {'steps', 'errors', 'claims_recorded', 'last_error_code'}:
+        raise ValueError('invalid_agent_result')
+    code = activity.get('last_error_code')
+    if code is not None and (not isinstance(code, str) or code not in TOOL_ERROR_CODES):
         raise ValueError('invalid_agent_result')
     for key, maximum in (('steps', 1024), ('errors', 10000), ('claims_recorded', 500)):
         if type(activity.get(key)) is not int or not 0 <= activity[key] <= maximum:
+            raise ValueError('invalid_agent_result')
+
+
+RUNTIME_PHASES = {'starting', 'responding', 'tool_running', 'waiting', 'finished'}
+STOP_REASONS = {'end_turn', 'max_tokens', 'refusal', 'cancelled', 'max_turn_requests', 'unknown'}
+
+
+def validate_runtime_activity(value):
+    if value is None:
+        return
+    required = {'events', 'last_event_at', 'phase', 'prompt_turns', 'last_stop_reason'}
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {'permission_requests', 'permission_denials'}:
+        raise ValueError('invalid_agent_result')
+    if (type(value['events']) is not int or not 0 <= value['events'] <= 1_000_000_000
+            or not isinstance(value['phase'], str) or value['phase'] not in RUNTIME_PHASES or type(value['prompt_turns']) is not int
+            or not 0 <= value['prompt_turns'] <= 100
+            or (value['last_stop_reason'] is not None and (not isinstance(value['last_stop_reason'], str) or value['last_stop_reason'] not in STOP_REASONS))):
+        raise ValueError('invalid_agent_result')
+    timestamp = value['last_event_at']
+    if timestamp is not None and (type(timestamp) not in (int, float) or not math.isfinite(timestamp) or not 0 <= timestamp <= 10_000_000_000):
+        raise ValueError('invalid_agent_result')
+    for key in ('permission_requests', 'permission_denials'):
+        if key in value and (type(value[key]) is not int or not 0 <= value[key] <= 1_000_000_000):
             raise ValueError('invalid_agent_result')
 
 
@@ -65,6 +101,7 @@ def validate_result(result, snapshot, paths, model, identity, deadline, complete
     if (not isinstance(workflow, dict) or type(workflow.get('version')) is not int or workflow['version'] != 1
             or workflow.get('job_identity_sha256') != job_identity(snapshot, paths, static_review)):
         raise ValueError('invalid_agent_result')
+    validate_runtime_activity(workflow.get('runtime_activity'))
     items = {item['id']: item for item in (static_review or {}).get('items', [])}
     leads = {key: item for key, item in items.items() if item['status'] == 'unverified'}
     plan = workflow.get('plan')
@@ -97,6 +134,7 @@ def validate_result(result, snapshot, paths, model, identity, deadline, complete
     for index, agent in enumerate(agents, 1):
         if not isinstance(agent, dict) or type(agent.get('reviewer')) is not int or agent['reviewer'] != index:
             raise ValueError('invalid_agent_result')
+        validate_runtime_activity(agent.get('runtime_activity'))
         files, ranges = agent.get('files'), agent.get('read_ranges')
         owned = plan['assignments'][index-1]
         if not isinstance(files, list) or not all(isinstance(file, dict) for file in files) or [file.get('path') for file in files] != owned:
@@ -136,6 +174,7 @@ def validate_result(result, snapshot, paths, model, identity, deadline, complete
                 or not isinstance(processed, list) or not all(isinstance(key, str) for key in processed) or len(processed) != len(set(processed))
                 or not set(processed).issubset(leads) or not isinstance(assessments, list) or len(assessments) > 500):
             raise ValueError('invalid_agent_result')
+        validate_runtime_activity(triage.get('runtime_activity'))
         validate_ranges(triage.get('read_ranges'), snapshot)
         validate_activity(triage.get('activity'))
         recorded = set()

@@ -5,6 +5,7 @@ The caller is responsible for isolation, process creation and group termination.
 import asyncio
 import json
 import inspect
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -32,11 +33,17 @@ def remote_error_category(message: str) -> str:
     return next((category for category, terms in categories if any(term in low for term in terms)), "remote_error")
 
 
+def native_model_limit_hint(text: str) -> bool:
+    """Identify explicit model capacity messages without retaining their contents."""
+    return bool(re.search(r"(?:quota\s+(?:has\s+been\s+|is\s+)?exhausted|resource[_ ]exhausted|rate[ -]limit(?:ed)?\s+(?:has\s+been\s+|is\s+)?exceeded|exhausted\s+(?:your\s+)?capacity|429\s+too\s+many\s+requests)", text, re.IGNORECASE))
+
+
 class ACPClient:
     def __init__(self, process: asyncio.subprocess.Process, *, terminate: Callable[[], Awaitable[None]],
                  timeout: float = 30, max_line: int = 65536, max_stdout: int = 1048576,
                  max_roundtrips: int = 32, notification: Callable[[str, Any], None] | None = None,
                  server_request: Callable[[str, Any], Any] | None = None,
+                 permission_outcome: Callable[[str, bool], None] | None = None,
                  allowed_tool_names: frozenset[str] = frozenset()):
         if process.stdin is None or process.stdout is None:
             raise ValueError("process requires piped stdin and stdout")
@@ -46,6 +53,7 @@ class ACPClient:
         self.deadline = asyncio.get_running_loop().time() + timeout
         self.max_line, self.max_stdout, self.max_roundtrips = max_line, max_stdout, max_roundtrips
         self.notification, self.server_request = notification, server_request
+        self.permission_outcome = permission_outcome
         self.allowed_tool_names = frozenset(allowed_tool_names)
         if any(not name.startswith('mcp_sentra_') for name in self.allowed_tool_names):
             raise ValueError('only isolated Sentra MCP tools can be permitted')
@@ -72,7 +80,9 @@ class ACPClient:
                 raise ACPError("message exceeds limit")
             self.process.stdin.write(data)
             await asyncio.wait_for(self.process.stdin.drain(), self._remaining())
-        except (OSError, ConnectionError, asyncio.TimeoutError, TypeError, ValueError) as exc:
+        except asyncio.TimeoutError:
+            raise ACPError("transport deadline exceeded") from None
+        except (OSError, ConnectionError, TypeError, ValueError):
             raise ACPError("transport write failed") from None
 
     async def request(self, method: str, params: dict) -> Any:
@@ -113,7 +123,9 @@ class ACPClient:
             while True:
                 try:
                     line = await asyncio.wait_for(self.process.stdout.readuntil(b"\n"), self._remaining())
-                except (asyncio.LimitOverrunError, asyncio.IncompleteReadError, asyncio.TimeoutError):
+                except asyncio.TimeoutError:
+                    raise ACPError("transport deadline exceeded") from None
+                except (asyncio.LimitOverrunError, asyncio.IncompleteReadError):
                     raise ACPError("invalid or incomplete response") from None
                 self.stdout_bytes += len(line)
                 if len(line) > self.max_line or self.stdout_bytes > self.max_stdout:
@@ -152,10 +164,11 @@ class ACPClient:
                     future.set_result(message["result"])
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            message = "transport deadline exceeded" if isinstance(exc, ACPError) and str(exc) == "transport deadline exceeded" else "transport response failed"
             for future in self.pending.values():
                 if not future.done():
-                    future.set_exception(ACPError("transport response failed"))
+                    future.set_exception(ACPError(message))
 
     @staticmethod
     def _callback(callback, method, params):
@@ -187,6 +200,8 @@ class ACPClient:
                         if isinstance(option, dict) and option.get('kind') == 'allow_once' and option.get('optionId') == 'allow':
                             reply['result'] = {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
                             break
+            if self.permission_outcome and isinstance(params, dict) and isinstance(params.get('sessionId'), str):
+                self.permission_outcome(params['sessionId'], reply['result']['outcome']['outcome'] == 'selected')
         elif method.startswith("fs/") or method.startswith("terminal/") or self.server_request is None:
             reply["error"] = {"code": -32601, "message": "Method not found"}
         else:

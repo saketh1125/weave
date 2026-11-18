@@ -186,7 +186,7 @@ def test_timeout_exports_validated_partial_evidence_before_cleanup(monkeypatch, 
         def __init__(self, process, **kwargs): self.terminate = kwargs['terminate']
         async def close(self): await self.terminate()
     async def spawn(*args, **kwargs): return Process()
-    async def exercise(client, model, probe, section, progress, result_callback):
+    async def exercise(client, model, probe, section, progress, result_callback, collector=None):
         progress.update(model='a', models=['a'], operation='session_prompt')
         raise smoke.ACPError('transport deadline exceeded')
     async def read(*args): return payload
@@ -234,3 +234,27 @@ def test_runner_rejects_invalid_review_deadline_before_start(value):
 def test_fixture_rejects_review_deadline():
     with pytest.raises(smoke.ACPError, match='deadline'):
         asyncio.run(smoke.run(review_timeout_seconds=600))
+
+
+def test_fixture_limit_message_stops_only_without_tool_progress():
+    async def run(finished, steps):
+        collector = smoke.TextCollector()
+        class Client:
+            async def request(self, method, params):
+                if method == 'initialize': return {'protocolVersion': 1}
+                if method == 'session/new': return {'sessionId': 's', 'configOptions': [
+                    {'id': 'model', 'currentValue': 'm', 'options': [{'value': 'm'}]}]}
+                if method == 'session/prompt':
+                    collector.receive('session/update', {'update': {'sessionUpdate': 'agent_message_chunk',
+                        'content': {'type': 'text', 'text': 'quota exhausted'}}})
+        calls = 0
+        async def result():
+            nonlocal calls
+            calls += 1
+            return {'review': {'finished': finished, 'steps': (calls // 2) * steps}}
+        return await smoke.exercise(Client(), 'm', False, result_callback=result, collector=collector)
+    with pytest.raises(smoke.ACPError) as error:
+        asyncio.run(run(False, 0))
+    assert error.value.category == 'model_limit_reported'
+    assert asyncio.run(run(True, 0))['review']['finished']
+    assert asyncio.run(run(False, 1))['review']['steps'] == 3

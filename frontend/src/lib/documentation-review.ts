@@ -22,8 +22,18 @@ export type NativeReviewProgress = {
   files_pending: number
   files_failed: number
   claims_assessed: number
-  agents: { reviewer: number; files: { path: string; status: "pending" | "running" | "completed" | "failed"; claims_assessed: number }[] }[]
+  agents: { reviewer: number; files: { path: string; status: "pending" | "running" | "completed" | "failed"; claims_assessed: number }[]; mcp_activity?: { steps: number; errors: number; claims_recorded: number; updated_at: number } }[]
   triage: { reviewer: number; status: "pending" | "running" | "completed" | "failed"; findings_total: number; findings_processed: number } | null
+  runtime?: { planner: NativeRuntimeActivity | null; agents: { reviewer: number; activity: NativeRuntimeActivity }[] }
+}
+export type NativeRuntimeActivity = {
+  events: number
+  last_event_at: number | null
+  phase: "starting" | "responding" | "tool_running" | "waiting" | "finished"
+  prompt_turns: number
+  last_stop_reason: "end_turn" | "max_tokens" | "refusal" | "cancelled" | "max_turn_requests" | "unknown" | null
+  permission_requests?: number
+  permission_denials?: number
 }
 export type StaticReview = {
   version: 1
@@ -70,6 +80,7 @@ const MAX_ITEMS = 2_000
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
 const text = (value: unknown, max = MAX_TEXT): value is string => typeof value === "string" && value.length <= max
 const nonnegativeInt = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+const finiteNonnegative = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0
 
 function parseCitation(value: unknown): DocumentationCitation {
   if (!object(value) || !text(value.file, 2000) || !value.file.trim() || !nonnegativeInt(value.start_line) || value.start_line < 1 ||
@@ -104,7 +115,7 @@ function parseNativeProgress(value: unknown): NativeReviewProgress | null {
   let completed = 0, pending = 0, failed = 0, claims = 0
   const agents = value.agents.map((agent, index) => {
     if (!object(agent) || agent.reviewer !== index + 1 || !Array.isArray(agent.files) || agent.files.length > MAX_ITEMS) throw new Error(INVALID_REVIEW)
-    return { reviewer: agent.reviewer, files: agent.files.map(file => {
+    const parsedFiles = agent.files.map(file => {
       if (!object(file) || !text(file.path, 2000) || !file.path.trim() ||
         !["pending", "running", "completed", "failed"].includes(String(file.status)) || !nonnegativeInt(file.claims_assessed) || files.has(file.path)) throw new Error(INVALID_REVIEW)
       files.add(file.path)
@@ -113,7 +124,15 @@ function parseNativeProgress(value: unknown): NativeReviewProgress | null {
       else pending++
       claims += file.claims_assessed
       return { path: file.path, status: file.status as NativeReviewProgress["agents"][number]["files"][number]["status"], claims_assessed: file.claims_assessed }
-    }) }
+    })
+    let mcp_activity: NativeReviewProgress["agents"][number]["mcp_activity"]
+    if (agent.mcp_activity !== undefined) {
+      const item = agent.mcp_activity
+      if (!object(item) || !nonnegativeInt(item.steps) || item.steps > 1_000_000_000 || !nonnegativeInt(item.errors) || item.errors > 1_000_000_000 ||
+        !nonnegativeInt(item.claims_recorded) || item.claims_recorded > MAX_ITEMS || !finiteNonnegative(item.updated_at) || item.updated_at > 8_640_000_000) throw new Error(INVALID_REVIEW)
+      mcp_activity = { steps: item.steps, errors: item.errors, claims_recorded: item.claims_recorded, updated_at: item.updated_at }
+    }
+    return { reviewer: agent.reviewer, files: parsedFiles, ...(mcp_activity === undefined ? {} : { mcp_activity }) }
   })
   let triage: NativeReviewProgress["triage"] = null
   if (value.triage !== undefined && value.triage !== null) {
@@ -130,8 +149,35 @@ function parseNativeProgress(value: unknown): NativeReviewProgress | null {
   if (unassigned
     ? !emptyPhase || triage !== null || value.files_completed !== 0 || value.files_failed !== 0 || value.files_pending !== value.files_total || value.claims_assessed !== 0
     : value.files_completed !== completed || value.files_pending !== pending || value.files_failed !== failed || value.files_total !== files.size || value.claims_assessed !== claims) throw new Error(INVALID_REVIEW)
+  let runtime: NativeReviewProgress["runtime"]
+  if (value.runtime !== undefined) {
+    const runtimeValue = value.runtime
+    const parseActivity = (item: unknown): NativeRuntimeActivity => {
+      if (!object(item) || !nonnegativeInt(item.events) || item.events > 1_000_000_000 ||
+        !(item.last_event_at === null || finiteNonnegative(item.last_event_at) && item.last_event_at <= 8_640_000_000) ||
+        !["starting", "responding", "tool_running", "waiting", "finished"].includes(String(item.phase)) ||
+        !nonnegativeInt(item.prompt_turns) || item.prompt_turns > 100 ||
+        !(item.last_stop_reason === null || ["end_turn", "max_tokens", "refusal", "cancelled", "max_turn_requests", "unknown"].includes(String(item.last_stop_reason)))) throw new Error(INVALID_REVIEW)
+      if ((item.permission_requests !== undefined && (!nonnegativeInt(item.permission_requests) || item.permission_requests > 1_000_000_000)) ||
+        (item.permission_denials !== undefined && (!nonnegativeInt(item.permission_denials) || item.permission_denials > 1_000_000_000))) throw new Error(INVALID_REVIEW)
+      return { events: item.events, last_event_at: item.last_event_at, phase: item.phase as NativeRuntimeActivity["phase"],
+        prompt_turns: item.prompt_turns, last_stop_reason: item.last_stop_reason as NativeRuntimeActivity["last_stop_reason"],
+        ...(item.permission_requests === undefined ? {} : { permission_requests: item.permission_requests }),
+        ...(item.permission_denials === undefined ? {} : { permission_denials: item.permission_denials }) }
+    }
+    if (!object(runtimeValue) || !(runtimeValue.planner === null || object(runtimeValue.planner)) ||
+      !Array.isArray(runtimeValue.agents) || runtimeValue.agents.length > 5) throw new Error(INVALID_REVIEW)
+    const runtimeAgentsValue = runtimeValue.agents
+    const runtimeAgents = runtimeAgentsValue.map((item, index) => {
+      if (!object(item) || !nonnegativeInt(item.reviewer) || item.reviewer < 1 || item.reviewer > 5 ||
+        runtimeAgentsValue.slice(0, index).some((previous: unknown) => object(previous) && previous.reviewer === item.reviewer)) throw new Error(INVALID_REVIEW)
+      return { reviewer: item.reviewer, activity: parseActivity(item.activity) }
+    })
+    runtime = { planner: runtimeValue.planner === null ? null : parseActivity(runtimeValue.planner), agents: runtimeAgents }
+  }
   return { phase: value.phase as NativeReviewProgress["phase"], files_total: value.files_total as number, files_completed: value.files_completed as number,
-    files_pending: value.files_pending as number, files_failed: value.files_failed as number, claims_assessed: value.claims_assessed as number, agents, triage }
+    files_pending: value.files_pending as number, files_failed: value.files_failed as number, claims_assessed: value.claims_assessed as number, agents, triage,
+    ...(runtime === undefined ? {} : { runtime }) }
 }
 
 function parseAssessment(value: unknown): DocumentationAssessment {
@@ -217,7 +263,6 @@ function parseMergedFindings(value: unknown, staticReview: StaticReview | null, 
 
 function parseNativeReviewCost(value: unknown): NativeReviewCost | null {
   if (value === undefined || value === null) return null
-  const finiteNonnegative = (item: unknown): item is number => typeof item === "number" && Number.isFinite(item) && item >= 0
   const optionalCount = (item: unknown): item is number | null => item === null || nonnegativeInt(item)
   if (!object(value) || !nonnegativeInt(value.prompt_calls) || !optionalCount(value.model_calls) || !optionalCount(value.input_tokens) ||
     !optionalCount(value.output_tokens) || !finiteNonnegative(value.elapsed_seconds) || typeof value.incomplete !== "boolean" || !object(value.budget) ||
@@ -303,13 +348,16 @@ export function reviewReasonMessage(reason: string): string {
     case "timeout": return "The provider did not respond in time. Continue the review to retry."
     case "provider_connection_failed": return "The provider connection failed. Check the connection and continue the review to retry."
     case "run_budget_exhausted": return "The review reached its run limit before all sections were completed."
-    case "agent_timeout": return "The native reviewer ran out of time while reviewing a Markdown file. Continue the review to resume."
-    case "agent_no_progress": return "Automatic continuation stopped because it produced no new validated claim assessment. Saved work is retained. Review the evidence and runtime before continuing manually."
+    case "agent_timeout": return "The native workflow reached its time limit. Saved findings are retained. Inspect the last activity, then continue the review."
+    case "agent_model_limit_reported": return "The native runtime reported a model usage limit before making further review-tool progress. Saved findings are retained. Check the model allowance before retrying."
+    case "agent_no_progress": return "Automatic continuation stopped because it produced no new review-tool progress. Saved work is retained. Review the evidence and runtime before continuing manually."
+    case "agent_refused": return "The native reviewer declined to continue. Saved findings are retained; review the evidence and runtime before continuing manually."
+    case "invalid_agent_result": return "The native reviewer returned a result that could not be validated. Any previously saved findings are retained."
     case "agent_continuation_limit": return "The automatic review session limit was reached. Saved findings are retained."
     case "agent_incomplete": return "The native reviewer stopped before finishing a Markdown file. Saved findings are retained. Review the evidence and runtime before continuing manually."
     case "native_prompt_budget_exhausted": return "The native review reached its prompt-turn budget before all files were complete. Saved findings are retained."
     case "agent_cleanup_failed": return "A native review agent could not be shut down cleanly, so the review stopped. Saved findings are retained. Check the agent runtime before continuing."
     case "workflow_replaced": return "This review was stopped because the documentation review workflow changed. Start a new review to use the updated workflow."
-    default: return reason.slice(0, 200)
+    default: return "The review stopped for an unrecognized reason. Saved findings are retained; check the review status and runtime before continuing."
   }
 }

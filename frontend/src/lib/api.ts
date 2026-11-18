@@ -80,6 +80,7 @@ export const api = {
       await requireSuccess(res)
     },
     testAntigravity: () => post<{ status: string; message: string }>("/settings/models/antigravity/test", {}),
+    testAntigravityGeneration: () => post<{ status: "passed" | "failed"; message: string }>("/settings/models/antigravity/test-generation", {}),
   },
   get,
   post,

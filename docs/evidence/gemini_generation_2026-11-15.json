@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-15",
+  "model": "gemini-3.8-flash",
+  "runtime_fixture": "passed",
+  "plain_generation": "passed",
+  "structured_generation": {
+    "first_attempt": "invalid_agent_result",
+    "subsequent_synthetic_probe": "passed",
+    "original_failure_cause": "unconfirmed"
+  },
+  "qa_prompt_fixture": {
+    "passed": true,
+    "documentation_and_code": true,
+    "citations": [
+      1,
+      2
+    ],
+    "elapsed_seconds": 31.632,
+    "native_prompt_calls": 1,
+    "input_tokens": null,
+    "output_tokens": null
+  },
+  "tests": {
+    "backend_full_suite_before_final_boundary_changes": 594,
+    "final_focused_contracts": 70,
+    "frontend": 31,
+    "frontend_build": "passed"
+  },
+  "whole_repository_completion": "unverified",
+  "source_incident": {
+    "sentra_files_changed_by_settings_agent": 6,
+    "restoration": "user_requested_leave_as_is",
+    "env_changed": false
+  },
+  "stored_model_choices_changed": false
+}

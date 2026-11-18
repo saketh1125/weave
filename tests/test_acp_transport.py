@@ -226,3 +226,35 @@ def test_multiplex_permissions_and_cancellation_are_session_specific():
         finally:
             await client.close()
     asyncio.run(run())
+
+
+def test_transport_deadline_remains_hard_during_notifications():
+    async def run():
+        client, _ = await make_client('notify', timeout=0.15, notification=lambda *_: None)
+        async with client:
+            with pytest.raises(ACPError, match='transport deadline exceeded'):
+                await client.request('initialize', {})
+    asyncio.run(run())
+
+
+def test_permission_callback_receives_only_session_and_decision():
+    async def run():
+        seen = []
+        client, _ = await make_client(permission_outcome=lambda sid, allowed: seen.append((sid, allowed)))
+        async def capture(message): pass
+        client._send = capture
+        try:
+            await client._handle_request({'id': 1, 'method': 'session/request_permission', 'params': {
+                'sessionId': 's', 'toolCall': {'title': 'secret'}, 'options': []}})
+            assert seen == [('s', False)]
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
+def test_model_limit_hints_are_specific():
+    from app.acp_transport import native_model_limit_hint
+    for text in ('quota exhausted', 'RESOURCE_EXHAUSTED', 'rate limit exceeded', 'exhausted your capacity', '429 too many requests'):
+        assert native_model_limit_hint(text)
+    for text in ('the quota is 100', 'this documents a rate limit', 'capacity planning'):
+        assert not native_model_limit_hint(text)

@@ -12,7 +12,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app.acp_transport import ACPClient, ACPError
+from app.acp_transport import ACPClient, ACPError, native_model_limit_hint
 from deployment.antigravity.source_tools import load_job, load_assessment_helper
 
 COMPOSE = ROOT / "deployment" / "antigravity" / "compose.yml"
@@ -85,6 +85,8 @@ class TextCollector:
     def __init__(self):
         self.parts = []
         self.size = 0
+        self.limit_hint = False
+        self.tail = ""
 
     def receive(self, method, params):
         if method != "session/update" or not isinstance(params, dict):
@@ -102,6 +104,8 @@ class TextCollector:
         if self.size > 65536:
             raise ACPError("text output limit exceeded")
         self.parts.append(text)
+        self.tail = (self.tail + text)[-512:]
+        self.limit_hint |= native_model_limit_hint(self.tail)
 
 
 def model_options(session):
@@ -176,7 +180,7 @@ async def report_progress(compose, env, callback):
         await asyncio.sleep(5)
 
 
-async def exercise(client, model, probe, section=None, progress=None, result_callback=None):
+async def exercise(client, model, probe, section=None, progress=None, result_callback=None, collector=None):
     progress = progress if progress is not None else {}
     progress['operation'] = 'initialize'
     initialized = await client.request("initialize", {"protocolVersion": 1,
@@ -206,6 +210,9 @@ async def exercise(client, model, probe, section=None, progress=None, result_cal
     report = {"status": "response received", "model": selected, "models": offered}
     prompt = review_prompt(section or SECTION)
     for _ in range(3):
+        before = await result_callback() if result_callback is not None and collector is not None else None
+        if collector is not None:
+            collector.tail, collector.limit_hint = '', False
         progress['operation'] = 'session_prompt'
         await client.request("session/prompt", {"sessionId": session["sessionId"], "prompt": [{"type": "text", "text": prompt}]})
         if result_callback is None:
@@ -213,6 +220,8 @@ async def exercise(client, model, probe, section=None, progress=None, result_cal
         report.update(await result_callback())
         if report["review"]["finished"]:
             break
+        if collector is not None and collector.limit_hint and before["review"].get("steps") == report["review"].get("steps"):
+            raise ACPError("model reported a capacity limit", category="model_limit_reported")
         prompt = ("Continue reviewing the remaining claims in the assigned section using the same tools and limits. "
                   "Preserve recorded assessments, and explicitly call finish_review when the review is complete.")
     return report
@@ -299,7 +308,7 @@ async def run(model=None, login=False, probe=False, job=None, allow_source_uploa
                 return verified_result(payload, job_identity, section, synthetic=not job)
             try:
                 report = await asyncio.wait_for(exercise(client, model, probe, prompt_section, progress,
-                    result_callback if not probe else None), max(0, deadline - asyncio.get_running_loop().time()))
+                    result_callback if not probe else None, collector), max(0, deadline - asyncio.get_running_loop().time()))
             except asyncio.TimeoutError:
                 raise ACPError("transport deadline exceeded") from None
             if not probe:

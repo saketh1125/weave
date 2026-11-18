@@ -67,7 +67,7 @@ URL = os.environ.get('SENTRA_TEST_DATABASE_URL')
 
 @pytest.mark.integration
 @pytest.mark.skipif(not URL, reason='SENTRA_TEST_DATABASE_URL is not configured')
-@pytest.mark.parametrize('scenario', ['complete', 'resume', 'invalid', 'incomplete', 'lost_lease', 'stale_doc', 'stale_code', 'budget', 'exhausted', 'claimless_resume'])
+@pytest.mark.parametrize('scenario', ['complete', 'resume', 'invalid', 'incomplete', 'lost_lease', 'stale_doc', 'stale_code', 'budget', 'exhausted', 'claimless_resume', 'runtime', 'budget_stop', 'no_progress', 'triage_progress'])
 def test_native_coordinator_persists_fenced_results(monkeypatch, scenario):
     from sqlalchemy.engine import make_url
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -93,6 +93,12 @@ def test_native_coordinator_persists_fenced_results(monkeypatch, scenario):
         if scenario in ('stale_doc', 'stale_code'):
             manifest['static_review'] = hybrid.static_review(SNAPSHOT, PATHS, 'abc', settings)
             current_snapshot['a.md' if scenario == 'stale_doc' else 'code.py'] += ' changed'
+        if scenario == 'triage_progress':
+            report = {'version': 1, 'fingerprint': hybrid.review_fingerprint(SNAPSHOT, PATHS, 'abc', settings),
+                'items': [{'id': str(i), 'status': 'unverified', 'claim': 'It works.',
+                           'doc': {'file': 'a.md', 'start_line': 1, 'end_line': 1}} for i in range(20)],
+                'counts': {'aligned': 0, 'outdated': 0, 'unverified': 20}, 'triage_threshold': 20}
+            monkeypatch.setattr(hybrid, 'static_review', lambda *_: report)
         called = []
         async def bridge(snapshot, paths, selected, identity, **kwargs):
             called.append(kwargs)
@@ -100,7 +106,28 @@ def test_native_coordinator_persists_fenced_results(monkeypatch, scenario):
                 saved = await session.get(DocumentationReview, run_id)
                 assert saved.manifest.get('static_review') == kwargs['static_review']
             report = kwargs.get('static_review', STATIC)
-            payload = result('incomplete', 'pending', report) if scenario == 'incomplete' else result(static=report)
+            payload = result('incomplete', 'pending', report) if scenario in ('incomplete', 'budget_stop', 'no_progress') else result(static=report)
+            if scenario == 'triage_progress':
+                payload = result('incomplete', 'pending', report, {**PLAN, 'static_triage': True})
+                payload['workflow']['static_triage'] = {'reviewer': 3, 'finding_ids': [str(i) for i in range(20)],
+                    'processed_ids': ['0'], 'assessments': [{'finding_id': '0', 'assessment': copy.deepcopy(ASSESSMENT)}],
+                    'read_ranges': [{'path': 'code.py', 'start_line': 1, 'end_line': 1}],
+                    'activity': {'steps': 1, 'errors': 0, 'claims_recorded': 1}, 'finished': False}
+            if scenario in ('budget_stop', 'no_progress'):
+                payload['category'] = 'budget_exhausted' if scenario == 'budget_stop' else 'no_progress'
+            if scenario == 'runtime':
+                activity = {'events': 2, 'last_event_at': 123.0, 'phase': 'responding', 'prompt_turns': 1, 'last_stop_reason': None}
+                payload['workflow']['runtime_activity'] = activity
+                payload['workflow']['agents'][0]['runtime_activity'] = activity
+                await kwargs['on_progress'](payload)
+                async with sessions() as check:
+                    rows = (await check.execute(select(DocumentationReviewTask).where(DocumentationReviewTask.run_id == run_id).order_by(DocumentationReviewTask.path))).scalars().all()
+                    original_activity_at = rows[0].state['activity']['updated_at']
+                payload['workflow']['agents'][1]['activity']['steps'] += 1
+                await kwargs['on_progress'](payload)
+                async with sessions() as check:
+                    rows = (await check.execute(select(DocumentationReviewTask).where(DocumentationReviewTask.run_id == run_id).order_by(DocumentationReviewTask.path))).scalars().all()
+                    assert rows[0].state['activity']['updated_at'] == original_activity_at
             if scenario in ('resume', 'budget'):
                 assert kwargs['completed_files'] == ['a.md'] and kwargs['plan'] == PLAN
                 payload['workflow']['agents'][0]['files'][0]['assessments'] = []
@@ -122,6 +149,10 @@ def test_native_coordinator_persists_fenced_results(monkeypatch, scenario):
                     row.lease_token = uuid.uuid4()
                     await session.commit()
             await kwargs['on_progress'](payload)
+            if scenario == 'triage_progress':
+                async with sessions() as check:
+                    saved = await check.get(DocumentationReview, run_id)
+                    assert saved.manifest['completed_triage_ids'] == ['0']
             return payload
         monkeypatch.setattr(antigravity_bridge, 'workflow', bridge)
         try:
@@ -149,10 +180,17 @@ def test_native_coordinator_persists_fenced_results(monkeypatch, scenario):
                     await native_service.run_native_review(job, run_id, SNAPSHOT, tasks, manifest)
             else:
                 outcome = await native_service.run_native_review(job, run_id, SNAPSHOT, tasks, manifest)
-                assert outcome['status'] == {'complete': 'completed', 'resume': 'completed', 'invalid': 'failed', 'incomplete': 'paused', 'budget': 'completed', 'exhausted': 'paused', 'claimless_resume': 'completed'}[scenario]
+                assert outcome['status'] == {'complete': 'completed', 'resume': 'completed', 'invalid': 'failed', 'incomplete': 'paused', 'budget': 'completed', 'exhausted': 'paused', 'claimless_resume': 'completed', 'runtime': 'completed', 'budget_stop': 'paused', 'no_progress': 'paused', 'triage_progress': 'paused'}[scenario]
             async with sessions() as session:
                 current = (await session.execute(select(DocumentationReviewTask).where(DocumentationReviewTask.run_id == run_id).order_by(DocumentationReviewTask.path))).scalars().all()
                 run = await session.get(DocumentationReview, run_id)
+                if scenario == 'triage_progress':
+                    assert run.manifest['completed_triage_ids'] == ['0']
+                    assert run.manifest['native_triage_finished'] is False
+                if scenario == 'runtime':
+                    assert run.manifest['native_runtime']['agents'][0]['events'] == 2
+                if scenario in ('budget_stop', 'no_progress'):
+                    assert run.reason == ('native_prompt_budget_exhausted' if scenario == 'budget_stop' else 'agent_no_progress')
                 if scenario == 'budget':
                     assert run.manifest['native_cost']['prompt_calls'] == 6
                 if scenario == 'exhausted':
@@ -163,7 +201,7 @@ def test_native_coordinator_persists_fenced_results(monkeypatch, scenario):
                     assert all(t.status == 'pending' for t in current)
                 elif scenario in ('invalid', 'lost_lease'):
                     assert current[0].state['assessments'] == [ASSESSMENT] and current[1].status == 'pending'
-                elif scenario == 'incomplete':
+                elif scenario in ('incomplete', 'budget_stop', 'no_progress', 'triage_progress'):
                     assert current[0].status == 'completed' and current[1].status == 'pending'
                 else:
                     assert all(t.status == 'completed' for t in current) and current[0].state['assessments'] == [ASSESSMENT]
@@ -261,3 +299,33 @@ def test_triage_rejects_other_verbatim_claim_from_same_line():
         'activity': {'steps': 1, 'errors': 0, 'claims_recorded': 1}, 'finished': False}
     with pytest.raises(ValueError):
         native_result.validate_result(payload, SNAPSHOT, PATHS, 'm', 'binding', 600, static_review=report)
+
+
+def test_native_runtime_activity_is_optional_and_rejects_raw_events():
+    payload = result()
+    runtime = {'events': 4, 'last_event_at': 123.0, 'phase': 'responding', 'prompt_turns': 2, 'last_stop_reason': 'end_turn', 'permission_requests': 1, 'permission_denials': 0}
+    payload['workflow']['runtime_activity'] = runtime
+    payload['workflow']['agents'][0]['runtime_activity'] = dict(runtime)
+    assert validate(payload)
+    for key, value in [('events', -1), ('last_event_at', float('nan')), ('phase', 'private text'), ('raw_content', 'private'), ('permission_denials', True)]:
+        modified = copy.deepcopy(payload)
+        modified['workflow']['agents'][0]['runtime_activity'][key] = value
+        with pytest.raises(ValueError): validate(modified)
+
+
+def test_native_reported_limit_is_distinct_from_confirmed_provider_throttling():
+    from app.documentation.native_service import failure_reason
+    assert failure_reason({'category': 'model_limit_reported'}) == 'agent_model_limit_reported'
+    assert failure_reason({'category': 'rate_limited'}) == 'rate_limited'
+    assert failure_reason({'category': 'budget_exhausted'}) == 'native_prompt_budget_exhausted'
+
+
+def test_native_activity_rejects_unbounded_unrecognized_error_text():
+    payload = result()
+    payload['workflow']['agents'][0]['activity']['last_error_code'] = 'finding_evidence_mismatch'
+    assert validate(payload)
+    payload['workflow']['agents'][0]['activity']['last_error_code'] = 'private provider response'
+    with pytest.raises(ValueError): validate(payload)
+    payload['workflow']['agents'][0]['activity'].pop('last_error_code')
+    payload['workflow']['agents'][0]['activity']['raw_text'] = 'private'
+    with pytest.raises(ValueError): validate(payload)

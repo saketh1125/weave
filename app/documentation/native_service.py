@@ -13,11 +13,11 @@ from .service import fenced, merge_assessments, assessment_rows
 
 
 def failure_reason(result):
-    if result.get('reason') == 'transport deadline exceeded':
+    if result.get('reason') == 'transport deadline exceeded' or result.get('category') == 'timeout':
         return 'agent_timeout'
     if result.get('rpcErrorCode') == -32000:
         return 'agent_credentials_unavailable'
-    return {'budget_exhausted': 'native_prompt_budget_exhausted', 'rate_limited': 'rate_limited', 'provider_connection_failed': 'agent_connection_failed',
+    return {'model_limit_reported': 'agent_model_limit_reported', 'no_progress': 'agent_no_progress', 'refusal': 'agent_refused', 'budget_exhausted': 'native_prompt_budget_exhausted', 'rate_limited': 'rate_limited', 'provider_connection_failed': 'agent_connection_failed',
             'credential_store_unavailable': 'agent_credentials_unavailable'}.get(result.get('category'), 'agent_failed')
 
 
@@ -85,7 +85,13 @@ async def run_native_review(job, run_id, snapshot, tasks, manifest):
             if workflow['plan'] is not None:
                 data['native_plan'] = workflow['plan']
             apply_cost(data, result['metrics'])
-            run.manifest = data
+            runtime = {'planner': workflow.get('runtime_activity'), 'agents': [
+                {'reviewer': agent['reviewer'], **agent['runtime_activity']}
+                for agent in workflow['agents'] if agent.get('runtime_activity') is not None]}
+            triage_runtime = workflow.get('static_triage')
+            if triage_runtime and triage_runtime.get('runtime_activity') is not None:
+                runtime['agents'].append({'reviewer': triage_runtime['reviewer'], **triage_runtime['runtime_activity']})
+            data['native_runtime'] = runtime
             current = (await session.execute(select(DocumentationReviewTask).where(
                 DocumentationReviewTask.run_id == run_id).with_for_update())).scalars().all()
             by_path = {task.path: task for task in current}
@@ -98,7 +104,10 @@ async def run_native_review(job, run_id, snapshot, tasks, manifest):
                     state['reused_static_ids'] = sorted(set(state.get('reused_static_ids', [])) | {
                         key for key in agent.get('reused_static_ids', [])
                         if any(item['id'] == key and item['doc']['file'] == file['path'] for item in static['items'])})
-                    state['activity'] = {**agent['activity'], 'phase': 'investigating', 'updated_at': time.time()}
+                    prior_activity = state.get('activity') or {}
+                    changed = any(prior_activity.get(key, 0) != agent['activity'].get(key, 0) for key in ('steps', 'errors', 'claims_recorded'))
+                    state['activity'] = {**agent['activity'], 'phase': 'investigating',
+                        'updated_at': time.time() if changed else prior_activity.get('updated_at', 0)}
                     if file['status'] == 'completed':
                         task.status = 'completed'
                         if file['path'] not in previous_completed:
@@ -117,7 +126,7 @@ async def run_native_review(job, run_id, snapshot, tasks, manifest):
                     task.assessments = assessment_rows(state['assessments'])
                 data['completed_triage_ids'] = sorted(set(triage['processed_ids']))
                 data['native_triage_finished'] = triage['finished']
-                run.manifest = dict(data)
+            run.manifest = data
             await session.commit()
 
     result = None
@@ -145,6 +154,8 @@ async def run_native_review(job, run_id, snapshot, tasks, manifest):
                     apply_cost(data, result['metrics'])
                     run.manifest = data
                     await session.commit()
+            if result.get('category') in {'budget_exhausted', 'no_progress', 'refusal', 'timeout', 'model_limit_reported'}:
+                reason = failure_reason(result)
             if result.get('cleanup_failed') is True:
                 reason = 'agent_cleanup_failed'
     except model.ProviderError as exc:
@@ -160,7 +171,7 @@ async def run_native_review(job, run_id, snapshot, tasks, manifest):
             DocumentationReviewTask.run_id == run_id))).scalars().all()
         missing = any(path.lower().endswith('.md') for path in run.manifest['unreadable_files'])
         if reason is not None:
-            run.status = 'paused' if reason in ('rate_limited', 'agent_timeout', 'agent_bridge_unavailable', 'native_prompt_budget_exhausted') else 'failed'
+            run.status = 'paused' if reason in ('rate_limited', 'agent_timeout', 'agent_bridge_unavailable', 'native_prompt_budget_exhausted', 'agent_no_progress', 'agent_model_limit_reported') else 'failed'
             run.reason = reason
         elif missing:
             run.status, run.reason = 'failed', 'indexed_markdown_unavailable'

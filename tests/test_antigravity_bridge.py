@@ -266,3 +266,63 @@ async def test_client_workflow_reaches_host_runner_with_all_inputs(bridge, monke
     assert captured['reviewed_claims'] == {'b.md': ['claim']} and captured['static_review'] == static
     assert captured['completed_triage_ids'] == ['finding'] and captured['max_prompt_calls'] == 7
     assert callable(captured['on_progress'])
+
+
+@pytest.mark.asyncio
+async def test_generation_binds_runtime_and_forwards_canonical_request(monkeypatch):
+    identity = 'a' * 64
+    async def state():
+        return {'identity': identity, 'verified': True, 'selected_model': 'gemini'}
+    seen = []
+    async def run(payload):
+        seen.append(payload)
+        return {'status': 'passed', 'identity': identity, 'model': 'gemini',
+                'message': {'role': 'assistant', 'content': 'OK'}}
+    monkeypatch.setattr(client, 'status', state)
+    monkeypatch.setattr(client, '_run', run)
+    result = await client.generate([{'role': 'user', 'content': 'OK'}], [], 'gemini', identity)
+    assert result['message']['content'] == 'OK'
+    assert seen[0]['kind'] == 'generate' and seen[0]['timeout_seconds'] == 120
+    with pytest.raises(ProviderError, match='agent_configuration_changed'):
+        await client.generate([], [], 'gemini', 'b' * 64)
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_busy_is_distinct_from_bridge_failure():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda _: httpx.Response(409, json={'status': 'agent_busy'}))) as transport:
+        with pytest.raises(ProviderError, match='agent_busy'):
+            await client._json(transport, 'POST', 'http://127.0.0.1:9218/jobs')
+
+
+@pytest.mark.asyncio
+async def test_outer_deadline_is_timeout_and_cancels_remote_job(monkeypatch):
+    enabled(monkeypatch)
+    deleted = []
+    async def handle(request):
+        if request.method == 'POST': return httpx.Response(200, json={'id': 'a' * 32})
+        if request.method == 'DELETE':
+            deleted.append(True)
+            return httpx.Response(200, json={'status': 'cancelled'})
+        return httpx.Response(200, json={'status': 'running'})
+    original = httpx.AsyncClient
+    monkeypatch.setattr(client, '_client', lambda token: original(transport=httpx.MockTransport(handle)))
+    limits = []
+    class Deadline:
+        async def __aenter__(self): raise TimeoutError()
+        async def __aexit__(self, *args): return False
+    def timeout(seconds):
+        limits.append(seconds)
+        return Deadline()
+    monkeypatch.setattr(client.asyncio, 'timeout', timeout)
+    with pytest.raises(ProviderError, match='agent_timeout'):
+        await client._run({'kind': 'workflow', 'deadline_seconds': 600})
+    assert deleted and limits == [960]
+
+
+def test_model_limit_state_is_safe_and_does_not_claim_verified():
+    state = client.public_state({'status': 'model_limit_reported', 'identity': 'a' * 64,
+        'models': ['gemini'], 'selected_model': 'gemini', 'verified': False, 'message': 'private provider text'})
+    assert state['status'] == 'model_limit_reported' and not state['verified']
+    assert 'private' not in str(state)

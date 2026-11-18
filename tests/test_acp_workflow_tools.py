@@ -56,6 +56,36 @@ def test_claimless_requires_read_and_explicit_reason():
     assert not reviewer.result_payload()['finished']
 
 
+def test_claimless_file_is_not_blocked_by_unrelated_tool_error():
+    job = workflow()
+    invoke(job.planner, 'read_assigned_markdown', {})
+    invoke(job.planner, 'submit_plan', {'assignments': [['a.md', 'b.md']]})
+    reviewer = job.reviewers['reviewer-1']
+    invoke(reviewer, 'read_assigned_markdown', {})
+    _, failed = reviewer.call_tool('unknown_tool', {})
+    assert failed and reviewer.errors == 1
+    invoke(reviewer, 'finish_file', {'path': 'b.md', 'no_factual_claims': True, 'reason': 'Only a heading.'})
+    assert reviewer.files['b.md']['status'] == 'completed'
+
+
+def test_failed_assessment_attempt_blocks_claimless_completion_for_same_file(monkeypatch):
+    class RejectAssessment:
+        def validate_assessment(self, *_args, **_kwargs):
+            raise w.base.ToolError('assessment_validation_failed')
+
+    job = workflow()
+    invoke(job.planner, 'read_assigned_markdown', {})
+    invoke(job.planner, 'submit_plan', {'assignments': [['a.md', 'b.md']]})
+    reviewer = job.reviewers['reviewer-1']
+    invoke(reviewer, 'read_assigned_markdown', {})
+    monkeypatch.setattr(reviewer, '_helper', lambda: RejectAssessment())
+    assessment = {'claim': 'Claim from this file.', 'documentation_citation': {'path': 'b.md', 'start_line': 1, 'end_line': 1}}
+    _, failed = reviewer.call_tool('record_assessment', assessment)
+    assert failed and 'b.md' in reviewer.assessment_attempts
+    _, failed = reviewer.call_tool('finish_file', {'path': 'b.md', 'no_factual_claims': True, 'reason': 'No factual claims.'})
+    assert failed and reviewer.files['b.md']['status'] == 'pending'
+
+
 def test_load_workflow_validates_snapshot(tmp_path):
     path = tmp_path / 'job.json'
     path.write_text(json.dumps({'snapshot': {'a.md': 'x'}, 'documentation_files': ['a.md']}))
@@ -181,3 +211,26 @@ def test_planner_diagnostics_are_bounded_fixed_codes():
     assert activity == {'steps': 1, 'errors': 1, 'last_error_code': 'read_assigned_markdown_first'}
     invoke(job.planner, 'read_assigned_markdown', {})
     assert job.planner.result_payload()['activity']['last_error_code'] == 'read_assigned_markdown_first'
+
+
+def test_triage_schema_and_evidence_mismatch_feedback(monkeypatch):
+    monkeypatch.setenv('ASSESSMENT_HELPER_PATH', str(Path('app/documentation/assessment.py').resolve()))
+    tool = next(t for t in w.Triage.tools_schema if t['name'] == 'record_triage_assessment')
+    nested = tool['inputSchema']['properties']['assessment']
+    assert nested == next(t['inputSchema'] for t in w.base.TOOLS if t['name'] == 'record_assessment')
+    assert set(nested['required']) == {'claim', 'documentation_citation', 'verdict', 'code_citations', 'suggested_update', 'rationale'}
+    job = workflow()
+    job.static = {'items': [{'id': str(i), 'status': 'unverified', 'doc': {'file': 'a.md', 'start_line': 1, 'end_line': 1}, 'claim': 'It works.'} for i in range(20)], 'triage_threshold': 20}
+    invoke(job.planner, 'read_assigned_markdown', {})
+    invoke(job.planner, 'submit_plan', {'assignments': [['a.md'], ['b.md']], 'static_triage': True})
+    lane = job.triage
+    invoke(lane, 'read_assigned_markdown', {})
+    assessment = {'claim': 'It works.', 'documentation_citation': {'path': 'a.md', 'start_line': 1, 'end_line': 1}, 'verdict': 'insufficient', 'code_citations': [], 'suggested_update': '', 'rationale': 'No conclusive source.'}
+    invalid = {**assessment, 'claim': 'Wrong', 'documentation_citation': {'path': 'a.md', 'start_line': 2, 'end_line': 2}}
+    value, failed = lane.call_tool('record_triage_assessment', {'finding_id': '0', 'assessment': invalid})
+    assert failed and value == {'error': 'finding_evidence_mismatch', 'feedback': {'claim_matches': False, 'documentation_citation_matches': False}}
+    serialized = w._tool_text_result(value, failed)
+    assert serialized['isError'] is True and json.loads(serialized['content'][0]['text']) == value
+    assert lane.result_payload()['activity']['last_error_code'] == 'finding_evidence_mismatch'
+    invoke(lane, 'record_triage_assessment', {'finding_id': '0', 'assessment': assessment})
+    assert lane.call_tool('record_triage_assessment', {'finding_id': '0', 'assessment': assessment})[1]

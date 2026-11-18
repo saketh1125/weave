@@ -57,6 +57,12 @@ async def _request(messages, tools, *, model_name, max_tokens, credential_slot=1
     if connection is None:
         from app.model_connections import resolve
         connection = resolve(workflow, credential_slot)
+    if connection.adapter == 'antigravity_native':
+        if preflight is not None:
+            await preflight()
+        return await model.complete(messages, tools, model=model_name, max_tokens=max_tokens, connection=connection,
+            workflow=workflow, prompt_tokens_upper_bound=prompt_tokens_upper_bound, force_assessment=force_assessment,
+            temperature=temperature, response_format=response_format, timeout_seconds=timeout_seconds)
     # Preserve existing seeded legacy rows; arbitrary group names never enter SQL identifiers.
     group = connection.quota_group
     row_id = group if group in ("mistral:1", "mistral:2") else "q:" + hashlib.sha256(group.encode()).hexdigest()[:62]

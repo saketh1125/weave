@@ -27,14 +27,57 @@ async def test_load_preferences_preserves_default_when_unset():
 
 
 @pytest.mark.asyncio
-async def test_rejects_unknown_and_nonreviewer_local_connection():
+async def test_rejects_unknown_connections_and_unverified_native_workflows():
     from app.routers import model_settings as api
     with pytest.raises(HTTPException) as exc:
-        await api.patch_model_settings(api.SettingsPatch(workflows={"planner": "antigravity_local"}))
+        await api.patch_model_settings(api.SettingsPatch(workflows={"unknown": "mistral_primary"}))
     assert exc.value.status_code == 422
     with pytest.raises(HTTPException) as exc:
         await api.patch_model_settings(api.SettingsPatch(workflows={"reviewer": "unknown"}))
     assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_all_workflow_routes_are_returned_with_saved_values_and_existing_defaults(monkeypatch):
+    from app.routers import model_settings as api
+    async def status():
+        return {"enabled": False, "status": "disabled", "message": "Disabled", "models": []}
+    monkeypatch.setattr(api.antigravity_bridge, "status", status)
+    response = await api._response(Preferences())
+    assert set(response["workflows"]) == {"planner", "reviewer", "draft", "qa", "summary", "drift", "pr_summary", "pr_qa"}
+    saved = await api._response(Preferences({"drift": "mistral_secondary"}))
+    assert saved["workflows"]["drift"] == "mistral_secondary"
+    assert saved["workflows"]["pr_qa"] == "mistral_primary"
+
+
+@pytest.mark.asyncio
+async def test_all_native_workflow_roles_are_advertised(monkeypatch):
+    from app.routers import model_settings as api
+    async def status():
+        return {"enabled": True, "status": "ready", "message": "Ready", "models": ["fixture"], "identity": "digest"}
+    monkeypatch.setattr(api.antigravity_bridge, "status", status)
+    response = await api._response(Preferences({}, "fixture", "fixture", "digest"))
+    native = next(item for item in response["connections"] if item["id"] == "antigravity_local")
+    assert native["configured"]
+    assert api.WORKFLOWS | {"tools", "json_object", "json_schema"} <= set(native["capabilities"])
+
+
+@pytest.mark.asyncio
+async def test_native_generation_check_uses_quota_and_hides_output(monkeypatch):
+    from app.routers import model_settings as api
+    connection = SimpleNamespace(model="fixture")
+    async def load(*args): return Preferences({}, "fixture", "fixture", "digest")
+    def native(preferences):
+        assert preferences.antigravity_model == "fixture"
+        return connection
+    async def request(messages, tools, **kwargs):
+        assert messages == [{"role": "user", "content": "Reply only with OK."}]
+        assert tools == [] and kwargs == {"connection": connection, "workflow": "qa", "model_name": "fixture", "max_tokens": 16}
+        return ({"role": "assistant", "content": "private output"}, {})
+    monkeypatch.setattr(api, "load_preferences", load)
+    monkeypatch.setattr(api.model_connections, "native_connection", native)
+    monkeypatch.setattr(api.model_quota, "request", request)
+    assert await api.test_antigravity_generation() == {"status": "failed", "message": "The model returned an unexpected response."}
 
 
 @pytest.mark.asyncio

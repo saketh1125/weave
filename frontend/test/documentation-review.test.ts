@@ -62,6 +62,25 @@ test("parses native planning and per-agent file progress", () => {
   assert.equal(parseDocumentationReview(valid).native_progress, null)
 })
 
+test("parses bounded runtime activity separately from MCP tool activity", () => {
+  const native_progress = { phase: "reviewing", files_total: 1, files_completed: 0, files_pending: 1, files_failed: 0, claims_assessed: 0,
+    agents: [{ reviewer: 1, files: [{ path: "README.md", status: "pending", claims_assessed: 0 }],
+      mcp_activity: { steps: 4, errors: 1, claims_recorded: 0, updated_at: 1_800_000_000 } }], triage: null,
+    runtime: { planner: { events: 2, last_event_at: 1_800_000_000, phase: "finished", prompt_turns: 1, last_stop_reason: "end_turn" },
+      agents: [{ reviewer: 1, activity: { events: 5, last_event_at: 1_800_000_001, phase: "waiting", prompt_turns: 2,
+        last_stop_reason: null, permission_requests: 1, permission_denials: 1 } }] } }
+  const withProgress = { ...valid, assessments: [], coverage: { ...valid.coverage, sections_total: 0, sections_completed: 0, sections_pending: 0, sections_failed: 0, claims_assessed: 0 }, native_progress }
+  assert.deepEqual(parseDocumentationReview(withProgress).native_progress, native_progress)
+  for (const badActivity of [
+    { ...native_progress.runtime.agents[0].activity, phase: "thinking" },
+    { ...native_progress.runtime.agents[0].activity, events: 1_000_000_001 },
+    { ...native_progress.runtime.agents[0].activity, permission_denials: -1 },
+  ]) assert.throws(() => parseDocumentationReview({ ...withProgress, native_progress: { ...native_progress, runtime: {
+    ...native_progress.runtime, agents: [{ reviewer: 1, activity: badActivity }] } } }), { message: INVALID_DOCUMENTATION_REVIEW })
+  assert.throws(() => parseDocumentationReview({ ...withProgress, native_progress: { ...native_progress, agents: [{
+    ...native_progress.agents[0], mcp_activity: { ...native_progress.agents[0].mcp_activity, updated_at: Infinity } }] } }), { message: INVALID_DOCUMENTATION_REVIEW })
+})
+
 test("rejects incomplete or inconsistent native file allocations", () => {
   const progress = { phase: "reviewing", files_total: 2, files_completed: 1, files_pending: 1, files_failed: 0, claims_assessed: 1,
     agents: [{ reviewer: 1, files: [{ path: "README.md", status: "completed", claims_assessed: 1 }] },
@@ -207,13 +226,13 @@ test("explains review failures and bounds unknown reasons", () => {
   for (const reason of ["invalid_credentials", "invalid_model", "provider_invalid_request", "run_budget_exhausted"]) {
     assert.notEqual(reviewReasonMessage(reason), reason)
   }
-  assert.equal(reviewReasonMessage("unknown_reason"), "unknown_reason")
-  assert.equal(reviewReasonMessage("x".repeat(201)).length, 200)
+  assert.match(reviewReasonMessage("unknown_reason"), /unrecognized reason/i)
+  assert.match(reviewReasonMessage("x".repeat(201)), /unrecognized reason/i)
 })
 
 test("explains native continuation stop reasons without implying rate limits", () => {
   const noProgress = reviewReasonMessage("agent_no_progress")
-  assert.match(noProgress, /no new validated claim assessment/)
+  assert.match(noProgress, /no new review-tool progress/)
   assert.match(noProgress, /saved work is retained/i)
   assert.match(noProgress, /evidence and runtime/i)
   const limit = reviewReasonMessage("agent_continuation_limit")
@@ -228,4 +247,10 @@ test("explains native continuation stop reasons without implying rate limits", (
   assert.match(reviewReasonMessage("native_prompt_budget_exhausted"), /saved findings are retained/i)
   assert.match(reviewReasonMessage("agent_cleanup_failed"), /could not be shut down cleanly/i)
   assert.match(reviewReasonMessage("agent_cleanup_failed"), /agent runtime/i)
+  assert.match(reviewReasonMessage("agent_refused"), /declined to continue/i)
+})
+
+
+test("distinguishes a native reported model limit from a timeout", () => {
+  assert.match(reviewReasonMessage("agent_model_limit_reported"), /runtime reported a model usage limit/)
 })

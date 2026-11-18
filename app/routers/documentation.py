@@ -68,9 +68,17 @@ def render(run, tasks):
         by_path = {task.path: task for task in tasks}
         agents = []
         for reviewer, paths in enumerate((native_plan or {}).get('assignments', []), 1):
-            agents.append({'reviewer': reviewer, 'files': [
+            agent = {'reviewer': reviewer, 'files': [
                 {'path': path, 'status': by_path[path].status, 'claims_assessed': len(by_path[path].assessments)}
-                for path in paths]})
+                for path in paths]}
+            activities = [(by_path[path].state or {}).get('activity') for path in paths
+                          if isinstance((by_path[path].state or {}).get('activity'), dict)]
+            activities = [item for item in activities if type(item.get('steps')) is int and type(item.get('errors')) is int
+                          and type(item.get('claims_recorded')) is int and type(item.get('updated_at')) in (int, float)]
+            if activities:
+                saved = max(activities, key=lambda item: item['updated_at'])
+                agent['mcp_activity'] = {key: saved[key] for key in ('steps', 'errors', 'claims_recorded', 'updated_at')}
+            agents.append(agent)
         phase = ('static_checks' if not run.manifest.get('static_review') else 'planning' if native_plan is None else 'reviewing') if run.status in ('queued', 'running') else run.status
         response['plan'] = None
         response['activity'] = None
@@ -86,8 +94,22 @@ def render(run, tasks):
             total = (static or {}).get('counts', {}).get('unverified', 0)
             response['native_progress']['triage'] = {
                 'reviewer': len(native_plan['assignments']) + 1,
-                'status': 'completed' if run.manifest.get('native_triage_finished') else 'running' if run.status == 'running' else 'failed' if run.status == 'failed' else 'pending',
-                'findings_total': total, 'findings_processed': len(run.manifest.get('completed_triage_ids', []))}
+                'status': 'completed' if run.status == 'completed' or run.manifest.get('native_triage_finished') else 'running' if run.status == 'running' else 'failed' if run.status == 'failed' else 'pending',
+                # Completed runs already passed validation of every triage result.
+                'findings_total': total, 'findings_processed': total if run.status == 'completed' else len(run.manifest.get('completed_triage_ids', []))}
+        native_runtime = run.manifest.get('native_runtime')
+        if isinstance(native_runtime, dict):
+            def runtime_activity(item):
+                if not isinstance(item, dict):
+                    return None
+                return {key: item[key] for key in ('events', 'last_event_at', 'phase', 'prompt_turns', 'last_stop_reason',
+                    'permission_requests', 'permission_denials') if key in item}
+            runtime_agents = native_runtime.get('agents')
+            response['native_progress']['runtime'] = {
+                'planner': runtime_activity(native_runtime.get('planner')),
+                'agents': [{'reviewer': item['reviewer'], 'activity': runtime_activity(item)}
+                           for item in runtime_agents if isinstance(item, dict) and type(item.get('reviewer')) is int
+                           and 1 <= item['reviewer'] <= 5] if isinstance(runtime_agents, list) else []}
         cost = run.manifest.get('native_cost')
         if cost is not None:
             saved = run.manifest['model_settings']

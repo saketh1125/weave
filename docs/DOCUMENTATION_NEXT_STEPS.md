@@ -8,16 +8,37 @@ The first approved real PR and three selected-file spot checks are verified.
 Current remaining work: full-scope repository review quality and efficiency,
 long-context/load/outage behavior, and the existing security/cloud release gates.
 
-## Current Weave acceptance gates (2026-11-14)
+## Finding-to-PR flow verified
 
-The detailed entries below are historical Sentra checkpoints, not current Weave model or deployment acceptance. Independent Weave retains the documentation-first reviewer, parallel API assignments, Markdown drafts and exact-approved publication.
+Weave recorded a published draft with two Markdown files from the completed Sentra review. [Sentra PR #3](https://github.com/saketh1125/Sentra/pull/3) is open and contains both documentation edits. Review the repeated phrase in the operations guide before merging. The earlier checkpoints below describe the state before publication.
 
-1. Resolve model availability: both configured Mistral Large 4 accounts currently return HTTP 403 `tier_not_allowed`. Large 4 stays selected. The independent local ACP bridge is reachable but its synthetic test returns `authentication_required`; no authenticated profile was copied from Sentra.
-2. Once a configured provider works, complete a bounded labeled review, compare actual claims/citations against the source, then run a representative whole-repository review. The 165-section rehearsal mocks model decisions and only verifies orchestration. Measure factuality, duplicate claims, completion, token/call use and recovery separately.
-3. Validate one new Weave draft and approved PR end to end after live review passes. Preserve Markdown-only edits, exact approval, base-commit guards, updated-finding checks and idempotent publication. Earlier Sentra PR checks are historical.
-4. Before deployment, resolve the open scanner advisory disposition, audit the container/OS, exercise Weave staging/backup restoration, and select cloud/account, private access, budget and region. API call/token ceilings do not measure native-agent token usage.
+## Full repository review completed — 2026-11-15
 
-See [Implementation status](IMPLEMENTATION_STATUS.md), [Workload validation](WORKLOAD_VALIDATION.md), and [Cloud release](CLOUD_RELEASE.md).
+After the user selected a working Antigravity account, native verification passed. Fresh Sentra review `32bd1dfb-00a8-4d9f-a366-1d0af2f91855` completed all 14 indexed Markdown files using four file reviewers plus one static-triage reviewer. It saved 89 AI assessments (81 supported, six insufficient, two conflicting) and completed the 29-item triage queue. Observed runtime was 846.275 seconds and 11 native prompt turns; native provider calls/tokens remain unknown. The reviewer budget is now 900 seconds, with the existing 18-turn cumulative cap.
+
+Live investigation fixed the MCP-only planner/session contract, incomplete triage schema, and an autoflush checkpoint bug that hid processed triage counts. Finalization also fixed reviewer-wide errors blocking an unrelated claimless file and telemetry changes being mistaken for semantic progress. The final backend suite passed 621 tests; deployed completed output passes the frontend parser and reports 14/14 plus 29/29. A final native fixture passed after finalization; the full real review was not repeated after those edge fixes.
+
+All saved claim anchors and citation ranges were checked. This does not prove exhaustive or semantically correct review: a three-assessment semantic sample still found a conditional overclaim. The two conflict candidates concern a missing `/api` base-URL prefix in the frontend README and a documented retry UI control absent from inspected frontend code. Both warrant human-reviewed Markdown drafts; no draft or PR was generated during this test.
+
+Evidence: `docs/evidence/documentation_full_review_2026-11-15.json`. Next: inspect the conflict candidates, generate narrowly scoped Markdown drafts, then exercise exact approval and PR publication. Larger-repository quality/performance and cloud readiness remain open. Historical limit/timeout investigations below are superseded by this successful run, not deleted.
+
+## Latest completion investigation — 2026-11-15
+
+A real review allocated four reviewers over 14 Markdown files, but paused with zero reviewer tool steps/claims after 18 cumulative prompt calls. A new invented fixture returned three end-turn responses, zero MCP calls, and a quota-related message hint. The user confirmed the same Gemini model currently reports a limit in Antigravity's own interface. This establishes a current availability blocker, not the cause of every historical failure.
+
+Reviewers now continue within shared budgets, stop repeated no-progress/refusal responses, and expose safe native event/permission/stop metadata through existing polling. Tool timestamps no longer refresh when unchanged. Budget, timeout, and model-limit conditions have distinct reasons. Explicit model-limit text is a reported condition, not proof of an RPC 429. See `docs/evidence/documentation_completion_2026-11-15.json`.
+
+Next: once Gemini allowance returns, verify the changed runtime in Settings and start a fresh whole-repository review. Do not silently resume incompatible sessions, reset spent budgets, or claim completion from mocked checks. Live retries stopped after the user confirmed the native limit.
+
+## Current Weave acceptance gates (2026-11-15)
+
+1. Model access: the local demo uses `codestral-2508` on the two Mistral accounts; Large 4 access was denied. Gemini 3.8 Flash passed synthetic native documentation, plain generation, and function-result checks. Settings now supports all existing workflow roles through the isolated native connection. Exact native token usage remains unavailable.
+2. Reliability: a planner-progress race that could emit a plan without its reviewer entries is fixed and tested. A separate structured generation failure was not reproduced in a subsequent small probe; accepting valid mixed assistant text/tool calls is now tested, and result-shape diagnostics contain no source values. These checks do not establish whole-repository completion or factual accuracy.
+3. Review quality: complete a fresh representative whole-repository review after runtime reverification. Compare claims/citations, static reuse, duplication, completion, calls, elapsed time, and bounded recovery. Earlier labeled two-file synthetic coverage remains documented in `docs/evidence/hybrid_synthetic_2026-11-14.json`.
+4. Draft/publication: verify a new Weave draft and approved PR after that review passes, preserving Markdown-only changes, exact approval, base-commit guards, updated-finding checks, and idempotency.
+5. Deployment: resolve scanner advisories, audit container/OS dependencies, exercise staging/restore, and choose cloud/account, private access, budget, and region. Antigravity remains a local testing connection; the bridge is disabled in production Compose.
+
+See [Implementation status](IMPLEMENTATION_STATUS.md), [Model connections](MODEL_CONNECTIONS.md), and [Cloud release](CLOUD_RELEASE.md).
 
 ## Completed incident fix
 

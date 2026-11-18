@@ -52,7 +52,7 @@ def unavailable(message="The local Antigravity bridge is not enabled."):
 
 def public_state(data):
     """Allowlist metadata; no native output, URLs, or credential references."""
-    messages = {"passed": "Live documentation fixture passed.",
+    messages = {"model_limit_reported": "The native runtime reported a model usage limit. Check the model allowance before retrying.", "passed": "Live documentation fixture passed.",
         "not_tested": "Run a connection test using the invented documentation fixture.",
         "authentication_required": "Complete native Antigravity setup in the server terminal, then test again.",
         "failed": "The native review did not pass. Check the local runtime and provider availability."}
@@ -72,6 +72,8 @@ def public_state(data):
 
 async def _json(client, method, url, *, max_bytes=100_000, **kwargs):
     async with client.stream(method, url, **kwargs) as response:
+        if response.status_code == 409:
+            raise ProviderError("agent_busy", request_sent=False)
         if response.status_code != 200:
             raise ProviderError("agent_bridge_unavailable", request_sent=False)
         raw = bytearray()
@@ -118,7 +120,7 @@ async def _run(payload, on_progress=None):
             job_id = started.get("id")
             if not isinstance(job_id, str) or len(job_id) != 32 or any(c not in "0123456789abcdef" for c in job_id):
                 raise ProviderError("invalid_agent_result")
-            timeout = payload['deadline_seconds'] + (220 if payload.get('kind') == 'workflow' else 100) if payload.get('kind') in ('review', 'workflow') else 160
+            timeout = payload['deadline_seconds'] + (360 if payload.get('kind') == 'workflow' else 100) if payload.get('kind') in ('review', 'workflow') else (payload['timeout_seconds'] + 60 if payload.get('kind') == 'generate' else 160)
             async with asyncio.timeout(timeout):
                 while True:
                     result = await _json(client, "GET", url + "/jobs/" + job_id,
@@ -129,7 +131,9 @@ async def _run(payload, on_progress=None):
                         await on_progress(result['progress'])
                         last_progress = result['progress']
                     await asyncio.sleep(1)
-        except (httpx.HTTPError, TimeoutError):
+        except TimeoutError:
+            raise ProviderError("agent_timeout") from None
+        except httpx.HTTPError:
             raise ProviderError("agent_bridge_unavailable") from None
         finally:
             if job_id:
@@ -178,3 +182,26 @@ async def workflow(snapshot, documentation_files, model, expected_identity, *, p
     if len(json.dumps(payload, ensure_ascii=False).encode()) > 50 * 1024 * 1024:
         raise ProviderError("agent_snapshot_too_large", request_sent=False)
     return await _run(payload, on_progress)
+
+
+async def generate(messages, tools, model, expected_identity, *, response_format=None,
+                   force_assessment=False, max_tokens=1024, timeout_seconds=120):
+    state = await status()
+    if not expected_identity or state.get('identity') != expected_identity:
+        raise ProviderError('agent_configuration_changed', request_sent=False)
+    if not state.get('verified') or state.get('selected_model') != model:
+        raise ProviderError('agent_connection_unverified', request_sent=False)
+    payload = {'kind': 'generate', 'model': model, 'identity': expected_identity,
+        'messages': list(messages), 'tools': list(tools), 'response_format': response_format,
+        'force_assessment': force_assessment, 'max_tokens': max_tokens,
+        'timeout_seconds': max(60, min(180, int(timeout_seconds)))}
+    if len(json.dumps(payload, ensure_ascii=False).encode()) > 1_500_000:
+        raise ProviderError('context_budget_exceeded', request_sent=False)
+    result = await _run(payload)
+    if result.get('identity') != expected_identity or result.get('model') != model:
+        raise ProviderError('agent_configuration_changed')
+    if result.get('status') != 'passed':
+        reason = result.get('reason')
+        raise ProviderError(reason if reason in {'agent_timeout', 'invalid_agent_result',
+            'agent_execution_failed', 'agent_cleanup_failed'} else 'agent_execution_failed')
+    return result

@@ -100,7 +100,9 @@ SUBMIT = schema('submit_plan', 'Assign every listed Markdown path exactly once t
                 {'assignments': {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}}}, 'static_triage': {'type': 'boolean'}}, ('assignments',))
 LIST_STATIC = schema('list_static_findings', 'List assigned static findings with pagination.', {'offset': {'type': 'integer'}})
 REUSE_STATIC = schema('reuse_static_result', 'Reuse one assigned aligned or outdated static finding by ID.', {'id': {'type': 'string'}}, ('id',))
-RECORD_TRIAGE = schema('record_triage_assessment', 'Assess exactly one assigned unverified static finding.', {'finding_id': {'type': 'string'}, 'assessment': {'type': 'object'}}, ('finding_id', 'assessment'))
+RECORD_TRIAGE = schema('record_triage_assessment', 'Assess one assigned unverified finding. Copy its claim and exact documentation citation; cite only source ranges already read.',
+                       {'finding_id': {'type': 'string'}, 'assessment': next(tool['inputSchema'] for tool in base.TOOLS if tool['name'] == 'record_assessment')},
+                       ('finding_id', 'assessment'))
 FINISH_TRIAGE = schema('finish_triage', 'Finish after all assigned findings are assessed.', {'complete': {'type': 'boolean'}}, ('complete',))
 FINISH_FILE = schema('finish_file', 'Finish one assigned file after assessment or explicit claimless determination.',
                      {'path': {'type': 'string'}, 'no_factual_claims': {'type': 'boolean'}, 'reason': {'type': 'string'}}, ('path',))
@@ -147,6 +149,7 @@ class WorkflowTools(base.JobTools):
         super().__init__(workflow.snapshot, {'id': 'workflow', 'path': paths[0], 'start_line': 1, 'end_line': 1, 'content': ''}, workflow.identity,
                          limits={'max_steps': MAX_STEPS, 'max_output_bytes': MAX_RESULT})
         self.initialized = False
+        self.last_error_code = None
         self.doc_reads = {path: set() for path in paths}
 
     def _track(self, path, start_line, end_line):
@@ -222,6 +225,21 @@ class WorkflowTools(base.JobTools):
 
     def call_tool(self, name, args):
         with self._lock:
+            result, failed = self._call_tool(name, args)
+            allowed = {'step_limit_reached', 'already_finished', 'invalid_tool_arguments', 'unknown_tool',
+                       'invalid_arguments', 'read_assigned_markdown_first', 'invalid_plan', 'plan_already_submitted',
+                       'bulk_documentation_too_large_use_read_markdown', 'documentation_path_not_assigned',
+                       'invalid_line_range', 'documentation_line_range_not_found', 'documentation_line_exceeds_16_kb',
+                       'documentation_result_too_large', 'static_finding_too_large', 'finding_evidence_mismatch',
+                       'finding_not_assigned_or_already_processed', 'assessment_validation_failed',
+                       'finish_requires_all_findings', 'finish_requires_all_files', 'finish_requires_assessment_or_no_claims_without_errors',
+                       'documentation_path_not_assigned_or_finished', 'assessment_limit_reached', 'result_output_limit'}
+            if failed and result.get('error') in allowed:
+                self.last_error_code = result['error']
+            return result, failed
+
+    def _call_tool(self, name, args):
+        with self._lock:
             if self.steps >= MAX_STEPS:
                 self.errors = min(10000, self.errors + 1)
                 return {'error': 'step_limit_reached'}, True
@@ -247,22 +265,6 @@ class WorkflowTools(base.JobTools):
 
 
 class Planner(WorkflowTools):
-    def __init__(self, workflow, paths):
-        super().__init__(workflow, paths)
-        self.last_error_code = None
-
-    def call_tool(self, name, args):
-        with self._lock:
-            result, failed = super().call_tool(name, args)
-            allowed = {'step_limit_reached', 'already_finished', 'invalid_tool_arguments', 'unknown_tool',
-                       'invalid_arguments', 'read_assigned_markdown_first', 'invalid_plan', 'plan_already_submitted',
-                       'bulk_documentation_too_large_use_read_markdown', 'documentation_path_not_assigned',
-                       'invalid_line_range', 'documentation_line_range_not_found', 'documentation_line_exceeds_16_kb',
-                       'documentation_result_too_large', 'static_finding_too_large'}
-            if failed and result.get('error') in allowed:
-                self.last_error_code = result['error']
-            return result, failed
-
     tools_schema = [BULK_DOC, LIST_DOC, READ_DOC, LIST_STATIC, SUBMIT]
     def static_items(self):
         return self.workflow.static['items']
@@ -284,6 +286,7 @@ class Reviewer(WorkflowTools):
         super().__init__(workflow, paths)
         self.reviewer = reviewer
         self.reused_static_ids = []
+        self.assessment_attempts = set()
         self.files = {p: {'path': p, 'status': 'pending', 'assessments': [], 'no_factual_claims': False, 'reason': None} for p in paths}
 
     def static_items(self):
@@ -309,6 +312,7 @@ class Reviewer(WorkflowTools):
         path = citation.get('path') if isinstance(citation, dict) else None
         if not isinstance(path, str) or path not in self.files or self.files[path]['status'] != 'pending':
             raise base.ToolError('documentation_path_not_assigned_or_finished')
+        self.assessment_attempts.add(path)
         if len(self.assessments) >= MAX_ASSESSMENTS:
             raise base.ToolError('assessment_limit_reached')
         content = self.snapshot[path]
@@ -337,7 +341,7 @@ class Reviewer(WorkflowTools):
         if not isinstance(reason, str) or len(reason) > 1024:
             raise base.ToolError('invalid_finish_reason')
         reused = any(item['id'] in self.reused_static_ids and item['doc']['file'] == args['path'] for item in self.static_items())
-        if not file['assessments'] and not reused and (args.get('no_factual_claims') is not True or not reason.strip() or self.errors):
+        if not file['assessments'] and not reused and (args.get('no_factual_claims') is not True or not reason.strip() or args['path'] in self.assessment_attempts):
             raise base.ToolError('finish_requires_assessment_or_no_claims_without_errors')
         file.update(status='completed', no_factual_claims=not file['assessments'] and not reused, reason=reason.strip() or None)
         return {'finished': True}
@@ -351,7 +355,7 @@ class Reviewer(WorkflowTools):
     def result_payload(self):
         with self._lock:
             return {'reviewer': self.reviewer, 'files': list(self.files.values()), 'read_ranges': list(self.read_ranges),
-                    'activity': {'steps': self.steps, 'errors': self.errors, 'claims_recorded': len(self.assessments)}, 'finished': self.finished, 'reused_static_ids': list(self.reused_static_ids)}
+                    'activity': {'steps': self.steps, 'errors': self.errors, 'claims_recorded': len(self.assessments), 'last_error_code': self.last_error_code}, 'finished': self.finished, 'reused_static_ids': list(self.reused_static_ids)}
 
 
 class Triage(Reviewer):
@@ -380,8 +384,10 @@ class Triage(Reviewer):
             raise base.ToolError('finding_not_assigned_or_already_processed')
         citation = args['assessment'].get('documentation_citation')
         doc = item['doc']
-        if citation != {'path': doc['file'], 'start_line': doc['start_line'], 'end_line': doc['end_line']} or ' '.join(str(args['assessment'].get('claim', '')).split()) != ' '.join(item['claim'].split()):
-            raise base.ToolError('finding_evidence_mismatch')
+        citation_matches = citation == {'path': doc['file'], 'start_line': doc['start_line'], 'end_line': doc['end_line']}
+        claim_matches = ' '.join(str(args['assessment'].get('claim', '')).split()) == ' '.join(item['claim'].split())
+        if not citation_matches or not claim_matches:
+            raise base.ToolError('finding_evidence_mismatch', {'claim_matches': claim_matches, 'documentation_citation_matches': citation_matches})
         result = self._assess(args['assessment'])
         self.triage_assessments.append({'finding_id': item['id'], 'assessment': dict(args['assessment'])})
         if len(base._json_bytes(self.result_payload())) > MAX_RESULT - 1024:
@@ -402,7 +408,7 @@ class Triage(Reviewer):
             return {'reviewer': self.reviewer, 'finding_ids': [item['id'] for item in self.findings],
                     'processed_ids': self.completed_ids + [item['finding_id'] for item in self.triage_assessments],
                     'assessments': list(self.triage_assessments), 'read_ranges': list(self.read_ranges),
-                    'activity': {'steps': self.steps, 'errors': self.errors, 'claims_recorded': len(self.assessments)}, 'finished': self.finished}
+                    'activity': {'steps': self.steps, 'errors': self.errors, 'claims_recorded': len(self.assessments), 'last_error_code': self.last_error_code}, 'finished': self.finished}
 
 
 # Reuse the source service's bounded HTTP parser and security checks.

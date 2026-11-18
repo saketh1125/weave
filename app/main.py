@@ -74,9 +74,7 @@ async def require_single_user_token(request, call_next):
             headers={"WWW-Authenticate": "Bearer"},
         )
     path = request.url.path
-    model_request = request.method == 'POST' and path.startswith('/api/repos/') and (
-        path.endswith(('/ask', '/docs')) or
-        ('/documentation/' in path and path.endswith(('/reviews', '/resume', '/drafts'))))
+    model_request = request.method == 'POST' and path.startswith('/api/repos/')
     if model_request:
         from app.model_preferences import load_preferences, use_preferences
         with use_preferences(await load_preferences()):

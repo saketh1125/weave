@@ -12,7 +12,7 @@ from app.model_preferences import Preferences, load_preferences, use_preferences
 from app.models import ModelPreferences
 
 router = APIRouter(prefix="/settings/models", tags=["model settings"])
-WORKFLOWS = frozenset({"planner", "reviewer", "draft", "qa"})
+WORKFLOWS = frozenset({"planner", "reviewer", "draft", "qa", "summary", "drift", "pr_summary", "pr_qa"})
 AG = "antigravity_local"
 
 
@@ -44,7 +44,8 @@ async def _response(preferences):
                     "model": c.model, "configured": bool(model_connections._credential(c)),
                     "capabilities": list(c.capabilities)} for c in registry.values()]
     connections.append({"id": AG, "label": "Antigravity Local", "adapter": "antigravity_local",
-                        "model": selected or "", "configured": verified, "capabilities": ["reviewer"]})
+                        "model": selected or "", "configured": verified,
+                        "capabilities": sorted(WORKFLOWS) + ["tools", "json_object", "json_schema"]})
     workflows = {}
     for workflow in WORKFLOWS:
         value = preferences.workflows.get(workflow, defaults[workflow])
@@ -68,8 +69,6 @@ async def patch_model_settings(body: SettingsPatch):
     registry, _ = _registry()
     if any(value not in registry and value != AG for value in updates.values()):
         raise HTTPException(422, "Unknown model connection")
-    if any(value == AG and key != "reviewer" for key, value in updates.items()):
-        raise HTTPException(422, "Antigravity is available only for reviews")
     status = await antigravity_bridge.status()
     async with SessionLocal() as session:
         row = await _locked_row(session)
@@ -82,7 +81,7 @@ async def patch_model_settings(body: SettingsPatch):
                 row.antigravity_identity = None
         workflows = dict(row.workflows or {})
         workflows.update(updates)
-        if workflows.get("reviewer") == AG and not (status.get("enabled") and row.antigravity_model
+        if AG in workflows.values() and not (status.get("enabled") and row.antigravity_model
                 and row.antigravity_model == row.antigravity_verified_model
                 and row.antigravity_model in status.get("models", []) and row.antigravity_identity
                 and row.antigravity_identity == status.get("identity")):
@@ -112,6 +111,27 @@ async def test_antigravity():
             row.antigravity_identity = result.get("identity") if valid else None
             await session.commit()
     return {"status": result.get("status", "unavailable"), "message": result.get("message", "Local bridge unavailable.")}
+
+
+@router.post("/antigravity/test-generation")
+async def test_antigravity_generation():
+    from app.model_connections import ProviderError
+    preferences = await load_preferences()
+    try:
+        connection = model_connections.native_connection(preferences)
+        message, _ = await model_quota.request(
+            [{"role": "user", "content": "Reply only with OK."}], [],
+            connection=connection, workflow="qa", model_name=connection.model, max_tokens=16,
+        )
+        if isinstance(message, dict) and message.get("content") == "OK":
+            return {"status": "passed", "message": "Generation test passed."}
+        return {"status": "failed", "message": "The model returned an unexpected response."}
+    except ProviderError as exc:
+        if exc.reason == "agent_busy":
+            return {"status": "failed", "message": "The local runtime is busy with another job. Try again when it is free."}
+        return {"status": "failed", "message": "Generation test failed. Check local model availability and try again."}
+    except Exception:
+        return {"status": "failed", "message": "Generation test failed. Check local model availability and try again."}
 
 
 @router.post("/connections/{connection_id}/test")

@@ -209,17 +209,16 @@ environment file is [`.env.example`](../.env.example).
 
 The authenticated **Settings** page lists server-configured connections without
 exposing keys, credential references or endpoint URLs. It stores workflow choices
-for planner, reviewer, draft and Q/A in the database. Unedited choices retain the
+for all existing model workflows in the database. Unedited choices retain the
 environment defaults, including two reviewer lanes; explicitly selecting a
 reviewer chooses one lane. API requests and review workers each use a consistent
 preference snapshot. Changed selections invalidate incompatible saved reviews.
 
-Antigravity is an opt-in **local documentation reviewer**, separate from direct
-API adapters. Weave requires its own bridge setup and verification. Earlier migration checks found it unconfigured; the authenticated native runtime subsequently passed synthetic planner/reviewer fixtures. It provides the planner inside the local documentation workflow, while draft generation and Q&A retain their separate API connections. The
-settings page requires a live invented-fixture test before enabling the selected
-runtime-offered model as reviewer. Available model IDs are discovered from the
-actual account; discovery does not verify every offered model. Existing Markdown
-draft approval and publication remain in Weave and use the configured draft API.
+Antigravity is an opt-in local native connection, separate from direct API adapters. The Settings page can select it for Q&A, summaries, drift, PR questions/summaries, planning, Markdown drafts, and the documentation reviewer. Run **Test connection** to verify the selected runtime/model, then **Test generation** to independently check a plain synthetic answer. Existing selections are preserved; choosing Gemini for Q&A is explicit.
+
+Generation uses one isolated ACP session with only a result-submission tool. Requested function calls are validated against the application's declared JSON schemas and returned to the caller; the native worker cannot execute those functions, edit repository files, or publish. Canonical conversation/tool history is supplied as structured input. Provider-specific thinking envelopes from another adapter are rejected. Saved identities include the verified runtime version; source/model changes require re-verification rather than silently resuming incompatible sessions.
+
+The native profile accepts one job at a time. Docs can run several sessions inside its job, but a simultaneous Q&A request receives `agent_busy`; it does not rotate accounts or fall back silently. Generation allows a conservative 100,000-byte input budget and 120-second deadline. Output token requests are best effort because the native runtime exposes no tokenizer limit; the result mailbox has a hard 32 KiB bound. Streaming and exact native token usage are unsupported; native prompt calls are reported separately. Direct API quota reservations do not apply to this local connection. These are integration limits, not claims about the model's advertised context or account allowance.
 
 Start `python scripts/antigravity_bridge.py` on the Docker host, with a server-only
 `SENTRA_AGENT_BRIDGE_TOKEN` of at least 32 random characters in `.env`. Enable

@@ -115,7 +115,7 @@ def _fit_ask_context(question: str, ranked: list[dict], connection, *, max_token
     """Fit excerpts under the transport's conservative UTF-8 byte reservation."""
     from app.retrieval import budget_candidates
 
-    capacity = min(connection.context_tokens, connection.tpm)
+    capacity = min(connection.context_tokens, connection.tpm) if connection.tpm else connection.context_tokens
     if capacity <= 0:
         return [], None
 
@@ -164,6 +164,7 @@ async def ask_repo(repo_id: uuid.UUID, body: AskBody):
     candidates = budget_candidates(ranked)
     answer = None
     llm_model = None
+    generation_error = None
     if candidates:
         from app.model_text import chat, configured, model_name
         if configured("qa"):
@@ -179,10 +180,14 @@ async def ask_repo(repo_id: uuid.UUID, body: AskBody):
                         max_tokens=max_tokens, temperature=0.1,
                     )
                     llm_model = connection.model or model_name("qa")
-            except Exception:
+            except Exception as exc:
+                from app.model_connections import ProviderError
+                generation_error = ("Gemini is busy with another local job. Try again when it finishes."
+                    if isinstance(exc, ProviderError) and exc.reason == 'agent_busy'
+                    else "The selected model could not complete the answer. Check its connection in Settings.")
                 logger.warning("Answer generation unavailable for repository %s", repo_id)
     citations = [
         {"id": i, "file": c["file"], "qualified_name": c["qualified_name"], "start_line": c["start_line"], "end_line": c["end_line"], "score": c["score"], "source_type": c["source_type"]}
         for i, c in enumerate(candidates, 1)
     ]
-    return {"answer": answer, "citations": citations, "answer_candidates": candidates, "model": DEFAULT_MODEL, "llm_model": llm_model}
+    return {"answer": answer, "citations": citations, "answer_candidates": candidates, "model": DEFAULT_MODEL, "llm_model": llm_model, "generation_error": generation_error}

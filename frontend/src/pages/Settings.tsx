@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { PageIntro, StatusBadge, ModelBadge } from "@/components/ui/status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-const labels: Record<keyof ModelWorkflows, string> = { planner: "Planner", reviewer: "Reviewer", draft: "Draft", qa: "Questions and answers" }
+const labels: Record<keyof ModelWorkflows, string> = { planner: "Planner", reviewer: "Reviewer", draft: "Draft", qa: "Questions and answers", summary: "Documentation summaries", drift: "Documentation drift", pr_summary: "Pull request summaries", pr_qa: "Pull request questions and answers" }
 const workflows = Object.keys(labels) as (keyof ModelWorkflows)[]
 
 export default function Settings() {
@@ -59,6 +59,15 @@ export default function Settings() {
     } catch { setError("The connection test could not be completed. Check the local configuration and try again.") }
     finally { setBusy(null) }
   }
+  async function testGeneration() {
+    setBusy("generation"); setError(""); setNotice("")
+    try {
+      const result = await api.modelSettings.testAntigravityGeneration()
+      if (result.status === "passed") setNotice(result.message)
+      else setError(result.message || "The generation test did not pass.")
+    } catch { setError("The generation test could not be completed. Check the local runtime and try again.") }
+    finally { setBusy(null) }
+  }
 
   return <div className="page-stack">
     <PageIntro eyebrow="WORKSPACE SETTINGS" title="Model settings" description="Review your connections and choose which model powers each workflow." />
@@ -70,19 +79,19 @@ export default function Settings() {
         {settings.connections.length === 0 && <p className="text-sm text-muted-foreground">No model connections are available.</p>}
         {settings.connections.map(connection => <div key={connection.id} className="surface-inset rounded-xl p-4"><div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-medium">{connection.label}</h3><p className="text-sm text-muted-foreground">{connection.adapter} · {connection.model}</p></div><StatusBadge status={connection.configured ? "configured" : "not configured"} label={connection.configured ? "Configured" : "Not configured"} /></div><p className="mt-2 text-xs text-muted-foreground">Capabilities: {connection.capabilities.join(", ") || "None listed"}</p>{connection.adapter !== "antigravity_local" && <div className="mt-3 grid gap-2"><p className="text-xs text-muted-foreground">The test sends an invented prompt and consumes model allowance.</p><div><Button variant="outline" disabled={!!busy} onClick={() => void testApi(connection.id)}>{busy === `api:${connection.id}` ? "Testing…" : "Test API connection"}</Button></div>{apiResults[connection.id] && <p role="status" className="text-sm">{apiResults[connection.id].status === "passed" ? "Connection test passed." : `Connection test failed: ${reviewReasonMessage(apiResults[connection.id].reason || "provider_error")}`}</p>}</div>}</div>)}
       </CardContent></Card>
-      <Card><CardHeader><CardTitle>Workflow routing</CardTitle><CardDescription>Choose a configured connection for each workflow. Antigravity currently supports documentation reviews; drafts and Q/A use API connections. Selecting a reviewer explicitly uses one reviewer lane.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
+      <Card><CardHeader><CardTitle>Workflow routing</CardTitle><CardDescription>Choose a configured connection for each workflow. Antigravity supports Q&A, structured generation, drafts, internal planning, and documentation review. Its runtime profile runs one job at a time, so Q&A is unavailable while a review is running.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
         {workflows.map(workflow => <label key={workflow} className="grid gap-1 text-sm font-medium">{labels[workflow]}<select value={selection[workflow]} disabled={!!busy} onChange={event => setSelection({ ...selection, [workflow]: event.target.value })} className="rounded-md border bg-background px-3 py-2 text-sm font-normal">
           {!settings.connections.some(connection => connection.id === selection[workflow]) && <option value={selection[workflow]}>{selection[workflow] || "Select a connection"}</option>}
           {settings.connections.map(connection => { const reason = connectionUnavailable(connection, workflow, settings, model); return <option key={connection.id} value={connection.id} disabled={!!reason}>{connection.label}{reason ? ` (${reason})` : ""}</option> })}
         </select></label>)}
       </CardContent></Card>
-      <Card><CardHeader><CardTitle>Antigravity <span className="text-sm font-normal text-muted-foreground">Experimental · local only</span></CardTitle><CardDescription>Antigravity supports documentation reviews only; documentation drafts continue to use an API connection. Run a manual connection test before selecting it as a reviewer.</CardDescription></CardHeader><CardContent className="grid gap-4">
+      <Card><CardHeader><CardTitle>Antigravity <span className="text-sm font-normal text-muted-foreground">Experimental · local only</span></CardTitle><CardDescription>Use the local runtime for Q&A, structured generation, drafts, internal planning, or reviews. Run both checks before routing work to it. Its profile handles one job at a time, so Q&A is unavailable while a review is running.</CardDescription></CardHeader><CardContent className="grid gap-4">
         <div className="result-toolbar"><StatusBadge status={!settings.antigravity.enabled ? "disabled" : settings.antigravity.verified ? "verified" : "unverified"} label={!settings.antigravity.enabled ? "Disabled" : settings.antigravity.verified ? "Verified" : "Not verified"} /><ModelBadge model={settings.antigravity.selected_model} /><span className="code-chip">{settings.antigravity.status.replace(/_/g, " ")}</span></div>
         <p className="text-sm text-muted-foreground">{settings.antigravity.message}</p>
-        {settings.connections.some(connection => connection.id === settings.workflows.reviewer && connection.adapter.toLowerCase().startsWith("antigravity")) && <p className="text-sm text-muted-foreground">To change the model, select a different reviewer and save first.</p>}
-        <label className="grid max-w-md gap-1 text-sm font-medium">Model<select value={model} disabled={!!busy || !settings.antigravity.enabled || settings.antigravity.models.length === 0 || settings.connections.some(connection => connection.id === settings.workflows.reviewer && connection.adapter.toLowerCase().startsWith("antigravity"))} onChange={event => setModel(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm font-normal"><option value="" disabled>Select a model</option>{settings.antigravity.models.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
+        {workflows.some(workflow => settings.connections.some(connection => connection.id === selection[workflow] && connection.adapter.toLowerCase().startsWith("antigravity"))) && <p className="text-sm text-muted-foreground">To change the model, route every Antigravity workflow elsewhere and save first.</p>}
+        <label className="grid max-w-md gap-1 text-sm font-medium">Model<select value={model} disabled={!!busy || !settings.antigravity.enabled || settings.antigravity.models.length === 0 || workflows.some(workflow => settings.connections.some(connection => connection.id === selection[workflow] && connection.adapter.toLowerCase().startsWith("antigravity")))} onChange={event => setModel(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm font-normal"><option value="" disabled>Select a model</option>{settings.antigravity.models.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
         {dirty && <p className="text-sm text-muted-foreground">Save changes before testing the selected model.</p>}
-        <div><Button variant="outline" disabled={!!busy || !settings.antigravity.enabled || dirty} onClick={() => void test()}>{busy === "test" ? "Testing…" : "Test connection"}</Button></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy || !settings.antigravity.enabled || dirty} onClick={() => void test()}>{busy === "test" ? "Testing…" : "Test connection"}</Button><Button variant="outline" disabled={!!busy || !settings.antigravity.verified || dirty} onClick={() => void testGeneration()}>{busy === "generation" ? "Testing generation…" : "Test generation"}</Button></div>
       </CardContent></Card>
       <div><Button disabled={!!busy || !dirty} onClick={() => void save()}>{busy === "save" ? "Saving…" : "Save settings"}</Button></div>
     </>}

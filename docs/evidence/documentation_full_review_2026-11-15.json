@@ -1,0 +1,91 @@
+{
+  "date": "2026-11-15",
+  "repository": "Sentra",
+  "run_id": "32bd1dfb-00a8-4d9f-a366-1d0af2f91855",
+  "indexed_commit": "ff13bdb0b30a4cd5236b7c714a5ec720467d0740",
+  "status": "completed",
+  "model": "gemini-3.8-flash",
+  "account_tier": "Pro as reported by the user; billing/quota entitlement not independently queried",
+  "coverage": {
+    "markdown_files_total": 14,
+    "markdown_files_marked_completed": 14,
+    "markdown_bytes": 215302,
+    "file_reviewers": 4,
+    "static_triage_reviewers": 1,
+    "static_triage_findings_completed": 29
+  },
+  "assessments": {
+    "total": 89,
+    "model_verdicts": {
+      "supported": 81,
+      "insufficient": 6,
+      "conflicting": 2
+    },
+    "all_claim_anchors_and_citation_ranges_checked": true,
+    "exhaustive_claim_coverage_or_semantic_accuracy_proven": false
+  },
+  "observed_usage": {
+    "native_prompt_turns": 11,
+    "elapsed_seconds": 846.2753982999998,
+    "provider_model_calls": null,
+    "input_tokens": null,
+    "output_tokens": null
+  },
+  "budgets": {
+    "native_prompt_turns": 18,
+    "reviewer_deadline_seconds": 900
+  },
+  "successful_review_execution_image": "sha256:339c1e3690edc7e5f7a26af0559b31df7c48477d670563b435c4410f4ad398d0",
+  "final_deployed_image": "sha256:239079b2e33d3df483cf0a3c618a3956f7801e2fee53ffa7a68602fe25b438b8",
+  "fixes": [
+    "MCP-only planner/reviewer task contract and explicit default session mode",
+    "reuse of complete assessment schema for static triage",
+    "incremental atomic-claim evidence instructions",
+    "atomic persistence of triage checkpoint metadata",
+    "per-file claimless-completion guard instead of reviewer-global error count",
+    "no-progress detection ignores increasing telemetry/error counters",
+    "completed historical runs render triage completion from validated terminal outcome"
+  ],
+  "checkpoint_note": "The successful live run preceded final persistence/edge fixes. Its terminal validator required all 29 triage results. Old stored triage ID count was zero due to autoflush; no manual completion or assessment data was injected. Final API renders completed triage from the validated completed-run invariant; new checkpoints persist IDs atomically.",
+  "verification": {
+    "final_full_backend_tests_passed": 621,
+    "final_focused_backend_tests_passed": 144,
+    "frontend_tests_last_passed": 33,
+    "frontend_build_last_passed": true,
+    "deployed_completed_response_passed_frontend_parser": true,
+    "final_native_fixture_passed": true,
+    "browser_interaction_tested_this_turn": false,
+    "full_repository_review_repeated_after_final_edge_fixes": false
+  },
+  "semantic_spot_checks": {
+    "latest_sample_size": 3,
+    "fully_supported_in_sample": 2,
+    "conditional_overclaim_in_sample": 1,
+    "all_assessments_semantically_audited": false
+  },
+  "conflict_candidates": [
+    {
+      "id_prefix": "7476055273ef",
+      "path": "frontend/README.md",
+      "finding": "Documented API base URL omits the /api prefix used by the client and backend.",
+      "inspection": "cited code inspected"
+    },
+    {
+      "id_prefix": "a2fe0f2728df",
+      "path": "docs/OPERATIONS_AND_PRIVACY.md",
+      "finding": "Retry API exists but inspected repository page/client do not expose the documented retry control.",
+      "inspection": "static inspection; browser behavior not exercised"
+    }
+  ],
+  "memory_samples_mib": {
+    "native_planner": 208.1,
+    "native_parallel_sessions": 939.6,
+    "peak_or_load_benchmark": false
+  },
+  "draft_or_pr_generated_this_turn": false,
+  "remaining": [
+    "Human review of AI verdicts, including conditional overclaims",
+    "Evidence-grounded Markdown draft and guarded PR publication test",
+    "Representative larger-repository quality, latency, RAM and outage/recovery validation"
+  ]
+}

@@ -64,13 +64,17 @@ class Connection:
     capabilities: tuple = ()
     allow_private: bool = False
     reasoning_effort: str = 'auto'
+    runtime_identity: str = ''
     @property
     def identity(self):
         return fingerprint(self)
 
 def fingerprint(connection):
     # The reference name identifies an account without exposing the credential.
-    value = json.dumps({'connection': asdict(connection), 'protocol_version': 1}, sort_keys=True, separators=(',', ':'))
+    details = asdict(connection)
+    if not details['runtime_identity']:
+        del details['runtime_identity']
+    value = json.dumps({'connection': details, 'protocol_version': 1}, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(value.encode()).hexdigest()
 
 def _local_schema_references(value):
@@ -96,7 +100,7 @@ def _registry():
             if not isinstance(supplied, dict): _invalid()
             defaults.update(supplied)
         result = {}
-        allowed = set(Connection.__dataclass_fields__) - {'name'}
+        allowed = set(Connection.__dataclass_fields__) - {'name', 'runtime_identity'}
         for name, cfg in defaults.items():
             if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', name) or not isinstance(cfg, dict) or set(cfg) - allowed: _invalid()
             if any(k not in cfg for k in ('adapter', 'model', 'endpoint', 'credential_env')): _invalid()
@@ -157,11 +161,27 @@ def validate_configuration():
     """Validate registry and workflow mappings without resolving secrets or DNS."""
     _registry()
 
+def native_connection(preferences=None):
+    from app.model_preferences import get_preferences
+    prefs = preferences if preferences is not None else get_preferences()
+    if (not prefs.antigravity_model or prefs.antigravity_model != prefs.antigravity_verified_model
+            or not isinstance(prefs.antigravity_identity, str) or not re.fullmatch(r'[0-9a-f]{64}', prefs.antigravity_identity)):
+        raise ProviderError('connection_unavailable', request_sent=False)
+    from app import antigravity_bridge
+    if antigravity_bridge.configuration() is None:
+        raise ProviderError('connection_unavailable', request_sent=False)
+    return Connection(name='antigravity_local', adapter='antigravity_native', model=prefs.antigravity_model,
+        endpoint='', credential_env='', quota_group='antigravity_local', rpm=0, tpm=0, interval=0,
+        concurrency=1, context_tokens=100000, max_output_tokens=8192, timeout_seconds=120,
+        max_attempts=1, capabilities=('tools', 'json_object', 'json_schema'), runtime_identity=prefs.antigravity_identity)
+
+
 def resolve(workflow, slot=1):
     from app.model_preferences import get_overrides
-    if get_overrides().get(workflow) == 'antigravity_local':
-        raise ProviderError('unsupported_capability', request_sent=False)
     if workflow not in WORKFLOWS or type(slot) is not int or slot not in (1,2): _invalid()
+    if get_overrides().get(workflow) == 'antigravity_local':
+        if slot != 1: raise ProviderError('connection_unavailable', request_sent=False)
+        return native_connection()
     registry, workflows = _registry()
     names = workflows[workflow]
     names = [names] if isinstance(names, str) else names
@@ -176,7 +196,8 @@ def _credential(connection):
     return os.environ.get(connection.credential_env) or (os.environ.get('SENTRA_MISTRAL_API_KEY') if fallback else None)
 
 def configured(workflow):
-    return bool(_credential(resolve(workflow)))
+    connection = resolve(workflow)
+    return connection.adapter == 'antigravity_native' or bool(_credential(connection))
 
 def _check_credential_groups(connection, key):
     registry, _ = _registry()
@@ -305,6 +326,53 @@ async def complete(messages, tools=(), *, connection=None, workflow='reviewer', 
             jsonschema.Draft202012Validator.check_schema(schema)
         except (KeyError, TypeError, ValueError, jsonschema.exceptions.SchemaError):
             raise ProviderError('invalid_schema', request_sent=False) from None
+    if connection.adapter == 'antigravity_native':
+        if model is not None and model != connection.model:
+            raise ProviderError('invalid_configuration', request_sent=False)
+        if any(not isinstance(m, dict) or m.get('role') not in ('system', 'user', 'assistant', 'tool') or '_sentra_native' in m for m in messages):
+            raise ProviderError('invalid_request', request_sent=False)
+        functions = {}
+        try:
+            for tool in tools:
+                function = tool['function']
+                name, parameters = function['name'], function['parameters']
+                if tool['type'] != 'function' or not isinstance(name, str) or not name or name in functions or not isinstance(parameters, dict) or not _local_schema_references(parameters): raise ValueError()
+                jsonschema.Draft202012Validator.check_schema(parameters)
+                functions[name] = parameters
+        except (KeyError, TypeError, ValueError, jsonschema.exceptions.SchemaError):
+            raise ProviderError('invalid_request', request_sent=False) from None
+        from app import antigravity_bridge
+        try:
+            async with asyncio.timeout(timeout):
+                async with _semaphore(connection):
+                    report = await antigravity_bridge.generate(list(messages), list(tools), connection.model, connection.runtime_identity,
+                        response_format=response_format, force_assessment=force_assessment, max_tokens=max_tokens,
+                        timeout_seconds=max(60, math.ceil(timeout)))
+        except TimeoutError:
+            raise ProviderError('timeout') from None
+        try:
+            message = report['message']
+            if not isinstance(message, dict) or message.get('role') != 'assistant' or set(message) - {'role', 'content', 'tool_calls'}: raise ValueError()
+            content, calls = message.get('content'), message.get('tool_calls', [])
+            if not isinstance(calls, list) or len(calls) > 1 or (content is not None and not isinstance(content, str)) or (not calls and not isinstance(content, str)): raise ValueError()
+            if calls:
+                call = calls[0]
+                function = call['function']
+                name = function['name']
+                if call['type'] != 'function' or not isinstance(call['id'], str) or name not in functions: raise ValueError()
+                args = json.loads(function['arguments'])
+                if not isinstance(args, dict): raise ValueError()
+                jsonschema.Draft202012Validator(functions[name]).validate(args)
+                if force_assessment and 'record_assessment' in functions and name != 'record_assessment': raise ValueError()
+            elif len(functions) == 1 or (force_assessment and 'record_assessment' in functions):
+                raise ValueError()
+            if response_format and not calls:
+                parsed = json.loads(content)
+                if response_format['type'] == 'json_object' and not isinstance(parsed, dict): raise ValueError()
+                if schema is not None: jsonschema.Draft202012Validator(schema).validate(parsed)
+        except (KeyError, TypeError, ValueError, jsonschema.exceptions.ValidationError):
+            raise ProviderError('invalid_response') from None
+        return message, {'native_prompt_calls': 1, 'input_tokens': None, 'output_tokens': None}
     key = _credential(connection)
     if not key: raise ProviderError('missing_credentials', request_sent=False)
     _check_credential_groups(connection, key)

@@ -1,0 +1,39 @@
+{
+  "date": "2026-11-15",
+  "latest_real_review": {
+    "run_id": "27865104-7b2d-4ae1-91a8-6657eb2a6416",
+    "status": "paused",
+    "reason": "agent_incomplete",
+    "reviewers": 4,
+    "files": 14,
+    "reviewer_tool_steps": 0,
+    "assessed_claims": 0,
+    "cumulative_prompt_calls": 18,
+    "elapsed_seconds": 132.0556655
+  },
+  "diagnostic_fixture": {
+    "status": "incomplete",
+    "tool_steps": 0,
+    "tool_errors": 0,
+    "native_events": 11,
+    "permission_requests": 0,
+    "permission_denials": 0,
+    "stop_reasons": [
+      "end_turn",
+      "end_turn",
+      "end_turn"
+    ],
+    "quota_related_message_hint": true,
+    "raw_native_text_retained": false
+  },
+  "user_confirmation": "The same Gemini model also reports a limit in Antigravity native UI.",
+  "tests": {
+    "full_backend_before_last_diagnostic_changes": 606,
+    "final_focused_backend_with_isolated_database": 123,
+    "frontend": 33,
+    "frontend_build": "passed"
+  },
+  "full_repository_completion": "unverified",
+  "native_reverification": "deferred until model allowance is available",
+  "image": "sha256:98713f875c9962f81badf6f3c59530006ade114f4e58874b86d2de6eb2a653b3"
+}
