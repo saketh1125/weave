@@ -32,8 +32,8 @@ export default function Findings() {
     finally { setBusy(false) }
   }
 
-  if (!repoId) return <div className="page-stack"><PageIntro eyebrow="Security overview" title="Findings" description="Review stored results from code and dependency scans." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view findings." /></div>
-  return <div className="page-stack"><PageIntro eyebrow="Security overview" title="Findings" description="Review stored results from code and dependency scans."><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void load()}>Refresh</Button><Button onClick={() => void scan()} disabled={busy}>{busy ? "Starting…" : "Run scans"}</Button></div></PageIntro>
+  if (!repoId) return <div className="page-stack"><PageIntro title="Findings" description="Review stored results from code and dependency scans." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view findings." /></div>
+  return <div className="page-stack"><PageIntro title="Findings" description="Review stored results from code and dependency scans."><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void load()}>Refresh</Button><Button onClick={() => void scan()} disabled={busy}>{busy ? "Starting…" : "Run scans"}</Button></div></PageIntro>
     <div className="metric-grid"><MetricTile label="Stored findings" value={items.length} hint="Across available scan results" />{["critical", "high", "medium"].map(severity => <MetricTile key={severity} label={`${severity[0].toUpperCase()}${severity.slice(1)} severity`} value={items.filter(item => item.severity.toLowerCase() === severity).length} hint="Stored findings" />)}</div>
     <div className="section-heading"><div><h2>Scan results</h2><p>Select a finding to review its details and suggested next steps.</p></div></div>
     {error && <p role="alert" className="notice notice-error">{error}</p>}

@@ -1,7 +1,7 @@
 # Weave workspace design
 
-The private-preview interface uses graphite surfaces, muted jade actions and warm
-system typography. Semantic status colors are independent of the brand accent:
+The private-preview interface uses cool charcoal surfaces, lavender actions and
+self-hosted Inter typography. Semantic status colors are independent of the brand accent:
 rose for failures, amber for gaps, jade for successful results, blue-gray for
 ongoing work, and neutral gray for unknown states. Icons and text accompany color.
 
@@ -91,7 +91,7 @@ Once published, the result shows the PR link.
 
 - Use two predictable header levels. The first locates the active repository
   and view. The second holds the view’s filters and main action. Keep the
-  sidebar quiet and preserve the graphite and jade palette.
+  sidebar quiet and reserve lavender for active controls.
 - Keep the three Docs & Drift tools separate because they produce different
   results. Within Review, distinguish AI verdicts, static leads and source
   coverage. Keep agent, model and usage details in the run details view.

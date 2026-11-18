@@ -17,8 +17,8 @@ export function MetricTile({ label, value, hint }: { label: string; value: React
   return <div className="metric-tile"><span className="metric-label">{label}</span><div className="metric-value">{value}</div>{hint && <span className="metric-hint">{hint}</span>}</div>
 }
 
-export function PageIntro({ eyebrow, title, description, children }: { eyebrow?: string; title: string; description: string; children?: ReactNode }) {
-  return <header className="page-intro"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1><p className="page-description">{description}</p></div>{children && <div className="page-actions">{children}</div>}</header>
+export function PageIntro({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
+  return <header className="page-intro"><div><h1>{title}</h1><p className="page-description">{description}</p></div>{children && <div className="page-actions">{children}</div>}</header>
 }
 
 export function EmptyState({ title, description, icon, children }: { title: string; description: string; icon?: ReactNode; children?: ReactNode }) {

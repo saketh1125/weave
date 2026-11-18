@@ -119,7 +119,7 @@ export default function Docs() {
 
   if (!repoId) return <EmptyState title="Select a repository first" description="Choose one on the Repos page before generating docs or checking alignment." />
   return <div className="page-stack">
-    <PageIntro eyebrow="Repository intelligence" title="Documentation" description="Review documentation against your code, explore summaries, and check alignment." />
+    <PageIntro title="Documentation" description="Review documentation against your code, explore summaries, and check alignment." />
     {(error || invalidStoredDocs) && <p role="alert" className="notice notice-error">{error || INVALID_DOCS_RESPONSE}</p>}
     <div className="view-switch" role="group" aria-label="Documentation views">
       <button type="button" aria-pressed={view === "review"} onClick={() => setView("review")}>Review</button>

@@ -25,9 +25,9 @@ export default function Score() {
     try { const score = await api.post<ScoreData>(`/repos/${repoId}/score`, {}); if (localStorage.getItem("weave.repoId") === repoId) setWorkspace(previous => ({ ...previous, score: { repoId, result: score } })) }
     catch (e) { if (localStorage.getItem("weave.repoId") === repoId) setError(e instanceof Error ? e.message : "Could not save score snapshot") }
   }
-  if (!repoId) return <div className="page-stack"><PageIntro eyebrow="Repository health" title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view its readiness score." /></div>
+  if (!repoId) return <div className="page-stack"><PageIntro title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to view its readiness score." /></div>
   const weights = data?.config_snapshot?.sev_weight ?? { critical: 10, high: 5, medium: 2, low: 0.5, unknown: 0.5 }
-  return <div className="page-stack"><PageIntro eyebrow="Repository health" title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps."><Button variant="outline" onClick={() => void snapshot()}>Save snapshot</Button></PageIntro>
+  return <div className="page-stack"><PageIntro title="Release readiness" description="Understand how open findings affect your score, with transparent weights and module caps."><Button variant="outline" onClick={() => void snapshot()}>Save snapshot</Button></PageIntro>
     {error && <p role="alert" className="notice notice-error">{error}</p>}
     {data?.stale && <p className="notice">Inputs changed since the saved snapshot. The score below was recalculated from current findings.</p>}
     {data?.analysis_coverage && data.analysis_coverage.status !== "complete" && <p className="notice notice-warning">

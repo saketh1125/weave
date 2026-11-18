@@ -29,9 +29,9 @@ export default function Ask() {
     } finally { setBusy(false) }
   }
 
-    if (!repoId) return <div className="page-stack"><PageIntro eyebrow="REPOSITORY INTELLIGENCE" title="Ask Weave" description="Explore your codebase with answers grounded in its sources." /><EmptyState icon={<MessageSquareText className="h-6 w-6" />} title="Select a repository first" description="Choose one on the Repos page, then ask questions about its code and documentation." /></div>
+    if (!repoId) return <div className="page-stack"><PageIntro title="Ask Weave" description="Explore your codebase with answers grounded in its sources." /><EmptyState icon={<MessageSquareText className="h-6 w-6" />} title="Select a repository first" description="Choose one on the Repos page, then ask questions about its code and documentation." /></div>
   return <div className="page-stack">
-    <PageIntro eyebrow="REPOSITORY INTELLIGENCE" title="Ask Weave" description="Explore your codebase with answers grounded in its sources." />
+    <PageIntro title="Ask Weave" description="Explore your codebase with answers grounded in its sources." />
     <Card><CardHeader><CardTitle>What would you like to understand?</CardTitle><CardDescription>Search indexed code and Markdown documentation, with file and line citations.</CardDescription></CardHeader><CardContent>
       <form onSubmit={submit} className="grid gap-3"><textarea aria-label="Your question" required value={question} onChange={e => setWorkspace(previous => ({ ...previous, askQuestion: e.target.value }))} rows={4} placeholder="Ask a question about this repository…" className="w-full rounded-xl border bg-background p-4 text-sm" /><div className="flex justify-end"><Button type="submit" disabled={busy || !question.trim()}>{busy ? "Searching…" : "Ask Weave"}</Button></div></form>
       <p className="mt-3 text-xs text-muted-foreground">When a model connection is configured, retrieved code and documentation snippets are sent to its provider to draft the answer. Without it, Weave returns matching sources and citations only.</p>

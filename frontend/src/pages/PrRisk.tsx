@@ -35,9 +35,9 @@ export default function PrRisk() {
     catch (e) { setError(e instanceof Error ? e.message : "Could not answer this PR question") }
     finally { setBusy(false) }
   }
-  if (!repoId) return <div className="page-stack"><PageIntro eyebrow="Change intelligence" title="Pull request risk" description="Review a pull request alongside existing findings from the selected repository." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to review its pull requests." /></div>
+  if (!repoId) return <div className="page-stack"><PageIntro title="Pull request risk" description="Review a pull request alongside existing findings from the selected repository." /><EmptyState title="Select a repository first" description="Choose one on the Repos page to review its pull requests." /></div>
   return <div className="page-stack">
-    <PageIntro eyebrow="Change intelligence" title="Pull request risk" description="Review a pull request alongside existing findings from the selected repository." />
+    <PageIntro title="Pull request risk" description="Review a pull request alongside existing findings from the selected repository." />
     <Card><CardHeader><div className="flex items-center gap-3"><GitPullRequest className="h-5 w-5 text-primary" /><CardTitle>Review a pull request</CardTitle></div><CardDescription>Enter a GitHub pull request URL to get started.</CardDescription></CardHeader><CardContent>
       <form onSubmit={submit} className="flex flex-wrap gap-3"><input required type="url" aria-label="GitHub pull request URL" placeholder="https://github.com/owner/repo/pull/123" value={url} onChange={e => setWorkspace(previous => ({ ...previous, prUrl: e.target.value }))} className="min-w-64 flex-1 rounded-md border bg-background px-3 py-2 text-sm" /><Button disabled={busy}>{busy ? "Reviewing…" : "Review PR"}</Button></form>
       <p className="mt-3 text-xs text-muted-foreground">If a model connection is configured, PR diff excerpts are sent to it for a summary. Without a model connection, Weave returns a deterministic change summary and finding links.</p>

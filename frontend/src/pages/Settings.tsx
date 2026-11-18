@@ -81,7 +81,7 @@ export default function Settings() {
   }
 
   return <div className="page-stack">
-    <PageIntro eyebrow="WORKSPACE SETTINGS" title="Model settings" description="Review your connections and choose which model powers each workflow." />
+    <PageIntro title="Model settings" description="Review your connections and choose which model powers each workflow." />
     {error && <p role="alert" className="notice notice-error">{error}</p>}
     {notice && <p role="status" className="notice notice-success">{notice}</p>}
     {!settings && !error && <p role="status" className="text-sm text-muted-foreground">Loading model settings…</p>}
