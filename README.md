@@ -88,6 +88,10 @@ the selected code, Markdown excerpts, or PR context needed for the requested ope
 - [Model connections and workflow selection](docs/MODEL_CONNECTIONS.md)
 - [CLI agent architecture and Antigravity assessment](docs/CLI_AGENT_CONNECTIONS.md)
 - [Documentation index](docs/README.md)
+- [Web pilot benchmark](docs/PILOT_BENCHMARK.md) — results and coverage limits from one pinned repository fixture.
+- [Weave decision log](docs/decisions/WEAVE_DECISIONS.md) — web pilot and desktop architecture decisions.
+- [Development log](docs/DEVELOPMENT_LOG.md) — dated changes and verification.
+- [Issue log](docs/ISSUE_LOG.md) — open defects and pilot release gates.
 - [Current implementation status](docs/IMPLEMENTATION_STATUS.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [API reference](docs/API.md)
