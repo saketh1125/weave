@@ -64,6 +64,26 @@ def test_osv_disables_call_analysis(monkeypatch, tmp_path):
     assert "--no-call-analysis=all" in commands[0]
 
 
+@pytest.mark.parametrize("manifest,expected", [
+    ("absolute", "service/requirements.txt"),
+    ("service/requirements.txt", "service/requirements.txt"),
+    ("../outside/requirements.txt", ""),
+])
+def test_osv_scan_exposes_repository_relative_manifest_paths(monkeypatch, tmp_path, manifest, expected):
+    root = tmp_path / "repo"
+    if manifest == "absolute":
+        manifest = str(root / "service/requirements.txt")
+    monkeypatch.setattr(osv, "_repo_path", lambda repo: root)
+    monkeypatch.setattr(osv, "run_osv_scanner", lambda path: {"results": [{
+        "source": {"path": manifest},
+        "packages": [{
+            "package": {"name": "example", "version": "1.0", "ecosystem": "PyPI"},
+            "vulnerabilities": [{"id": "PYSEC-test"}],
+        }],
+    }]})
+    assert osv.scan_repo(object())[0].lockfile_path == expected
+
+
 def test_semgrep_subprocess_uses_fixed_cwd_metrics_and_scoped_environment(monkeypatch):
     repo_root = Path.cwd()
     monkeypatch.setattr(semgrep, "SEMGREP_BIN", Path("semgrep"))

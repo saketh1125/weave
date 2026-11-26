@@ -2,6 +2,13 @@
 
 Use these documents for the current implementation:
 
+- [Weave decision log](decisions/WEAVE_DECISIONS.md) — product and architecture
+  decisions, rationale, and pending choices.
+- [Issue log](ISSUE_LOG.md) — defects, pilot blockers, and verification gaps.
+- [Development log](DEVELOPMENT_LOG.md) — dated changes, investigation notes,
+  and verification.
+- [Web pilot benchmark](PILOT_BENCHMARK.md) — pinned fixture, scored checks,
+  and issues found during acceptance.
 - [Migration and fresh verification](MIGRATION.md) — independent setup, retained identifiers, and exclusions.
 
 - [Model connections](MODEL_CONNECTIONS.md) — server-side providers, quotas,

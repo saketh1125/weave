@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import cvss
 
@@ -267,10 +268,16 @@ def normalize_scanner_output(
 ) -> list[NormalizedFinding]:
     """Convert osv-scanner JSON into deduplicated NormalizedFindings."""
     merged: dict[str, NormalizedFinding] = {}
+    root_path = Path(root).resolve() if root else None
 
     for res in payload.get("results", []) or []:
         src = res.get("source") or {}
         lock = src.get("path") or ""
+        if root_path and lock:
+            try:
+                lock = (root_path / lock).resolve().relative_to(root_path).as_posix()
+            except (OSError, RuntimeError, ValueError):
+                lock = ""
         for pkg_entry in res.get("packages", []) or []:
             pkg = pkg_entry.get("package") or {}
             name = pkg.get("name") or ""

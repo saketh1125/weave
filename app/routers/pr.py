@@ -233,7 +233,7 @@ async def ask_about_pr(repo_id: uuid.UUID, pr_number: int, body: PrQuestionIn):
             answer, _, _ = await model_chat(
                 workflow="pr_qa",
                 messages=[
-                    {"role": "system", "content": "Answer questions about this pull request using only the supplied PR metadata, changed-file list, risk flags, and diff excerpts. State clearly when context is insufficient or a file's diff is unavailable. Distinguish added, removed, and unchanged code. Cite changed files and, when available, line numbers from diff excerpts. Do not claim to have reviewed repository code absent from the provided context."},
+                    {"role": "system", "content": "Answer questions about this pull request using only the supplied PR metadata, changed-file list, risk flags, and diff excerpts. State clearly when context is insufficient or a file's diff is unavailable. Distinguish added, removed, and unchanged code. Distinguish application source changes from dependency manifest, lockfile, configuration, and documentation changes. Cite changed files and, when available, line numbers from diff excerpts. Do not claim to have reviewed repository code absent from the provided context."},
                     {"role": "user", "content": f"Question: {question}\n\nPull request context:\n{context}"},
                 ],
                 max_tokens=700,
