@@ -65,3 +65,41 @@ the user's CLI and lets Weave display connection and verification status.
 Shipping a Connect button requires a supported provider flow and end-to-end
 verification for that provider. The pilot should show clear availability for
 each connection. See [CLI agent connections](../CLI_AGENT_CONNECTIONS.md).
+
+## W004 · Expand language and framework support in stages
+
+**Decided 2026-11-27.** Add broader language and framework support to Weave's
+product scope. Start with Maven and Spring Boot. Use pilot demand to prioritize
+Gradle and Rust next. Go and .NET remain in scope. This work follows web pilot
+stabilization under W001.
+
+**Why.** Weave's deepest indexing and cited Q&A cover Python, JavaScript, and
+TypeScript, with Markdown indexed separately. Deterministic documentation checks
+cover selected FastAPI and Express patterns. Existing scanner support can
+surface advisories for some Java and Rust manifests. Each ecosystem still needs
+its own dependency-resolution evidence and framework checks before Weave can
+claim comparable coverage.
+
+| Target | Planning estimate | Initial scope |
+| --- | ---: | --- |
+| Java with Maven and Spring Boot | 4–6 engineer-weeks | Structured Java citations, multi-module Maven dependency evidence, and Spring route and configuration checks. |
+| Gradle after Maven | 2–4 additional engineer-weeks | Multi-project builds, variants, and resolved dependency evidence. |
+| Rust with Cargo and Axum | 3–5 engineer-weeks | Structured Rust citations, workspace and feature resolution, minimum Rust versions, and Axum route checks. |
+| Go with Gin or Chi | 2–4 engineer-weeks | Structured Go citations, module resolution evidence, and route checks for one framework. |
+| C# with ASP.NET Core and NuGet | 4–6 engineer-weeks | Structured C# citations, target-framework and package-resolution evidence, and ASP.NET route checks. |
+
+Estimates are rough engineering effort for the listed targets. They assume reuse
+of the current UI, jobs, citation validation, documentation review, PR review,
+and scoring infrastructure.
+
+**Approach.** Reuse Weave's scanner integrations for known vulnerabilities and
+use resolved dependency metadata for compatibility. Prefer evidence exported
+by the team's trusted CI build for cases involving profiles, targets, features,
+or private registries. Report missing evidence as incomplete coverage. Keep the
+documentation review Markdown-first and preserve draft approval and PR safeguards.
+
+**Acceptance.** For each target, verify cited Q&A, known vulnerability findings,
+compatibility conflicts, documentation drift, and PR review on a representative
+repository and labeled fixtures. Include compatible cases and incomplete
+evidence. Validate Java on a multi-module Spring Boot repository before claiming
+enterprise Java coverage.
